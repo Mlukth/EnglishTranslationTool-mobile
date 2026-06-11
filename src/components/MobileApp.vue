@@ -1,5 +1,5 @@
 <template>
-  <div class="ett-mobile-body">
+  <div class="ett-mobile-body" :style="{ '--ett-fs': $.fontScale }">
     <!-- Tab 1: 范文库 -->
     <div v-if="activeTab === 'essays'" class="mobile-tab">
       <div class="mob-header">
@@ -173,6 +173,14 @@
           <span>🌙 深色模式</span>
           <span class="mob-toggle" :class="{ on: $.darkMode }"></span>
         </div>
+        <div class="mob-setting-row">
+          <span>🔤 字体大小</span>
+          <span class="mob-fontsize-ctl">
+            <span class="mob-fs-btn" :class="{ on: $.fontSize === 'small' }" @click="$.fontSize = 'small'">小</span>
+            <span class="mob-fs-btn" :class="{ on: $.fontSize === 'medium' }" @click="$.fontSize = 'medium'">中</span>
+            <span class="mob-fs-btn" :class="{ on: $.fontSize === 'large' }" @click="$.fontSize = 'large'">大</span>
+          </span>
+        </div>
         <div class="mob-setting-row" @click="$.exportData">
           <span>📤 导出数据</span>
           <span style="font-size:9px;color:#888">JSON 备份</span>
@@ -204,12 +212,21 @@
 </template>
 
 <script setup>
-import { ref, inject, onMounted, onUnmounted } from 'vue'
+import { ref, inject, computed, onMounted, onUnmounted } from 'vue'
 
 const $ = inject('ett')
 
 const activeTab = ref('essays')
 const mobSrcShow = ref(false)
+
+const fontScale = computed(() => {
+  switch ($.fontSize) {
+    case 'small': return 0.82
+    case 'large': return 1.18
+    case 'xlarge': return 1.35
+    default: return 1
+  }
+})
 
 function checkMobile() {
   if (window.innerWidth >= 768) { $.isMobile.value = false }
@@ -246,7 +263,7 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 8px; flex-shrink: 0;
 }
-.mob-title { font-size: 16px; font-weight: 700; color: #fff; }
+.mob-title { font-size: calc(16px * var(--ett-fs, 1)); font-weight: 700; color: #fff; }
 .mob-count { font-size: 10px; color: #888; background: #374151; padding: 2px 8px; border-radius: 10px; }
 
 .mob-stats-bar {
@@ -263,7 +280,7 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 }
 .mob-essay-item.active { background: #1a2a3a; border-radius: 8px; border-bottom-color: transparent; }
 .mob-essay-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mob-essay-title { font-size: 12px; color: #eee; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mob-essay-title { font-size: calc(12px * var(--ett-fs, 1)); color: #eee; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mob-essay-src { font-size: 9px; color: #888; }
 .mob-essay-score { font-size: 18px; font-weight: 700; margin-left: 8px; }
 .mob-essay-new { font-size: 10px; color: #888; background: #374151; padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
@@ -290,13 +307,13 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
   position: relative;
 }
 .mob-src-num { font-size: 10px; color: #409eff; font-weight: 700; }
-.mob-src-en { font-size: 10px; color: #bbb; line-height: 1.5; word-break: break-word; cursor: pointer; }
+.mob-src-en { font-size: calc(10px * var(--ett-fs, 1)); color: #bbb; line-height: 1.5; word-break: break-word; cursor: pointer; }
 .mob-src-kp { font-size: 8px; color: #e6a23c; margin-top: 4px; display: block; }
 
-.mob-section-label { font-size: 10px; color: #999; font-weight: 700; padding: 8px 0 4px; }
+.mob-section-label { font-size: calc(10px * var(--ett-fs, 1)); color: #999; font-weight: 700; padding: 8px 0 4px; }
 .mob-textarea {
   width: 100%; height: 80px; background: #2d2d3f; border: none; border-radius: 8px;
-  padding: 10px; color: #ddd; font-size: 12px; resize: none; outline: none; font-family: inherit;
+  padding: 10px; color: #ddd; font-size: calc(12px * var(--ett-fs, 1)); resize: none; outline: none; font-family: inherit;
 }
 .mob-textarea::placeholder { color: #555; }
 
@@ -313,8 +330,8 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 .mob-dim-bar { flex: 1; height: 6px; background: #374151; border-radius: 3px; overflow: hidden; }
 .mob-dim-bar div { height: 100%; border-radius: 3px; }
 .mob-fb-card { background: #2d2d3f; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
-.mob-fb-title { font-size: 10px; color: #e6a23c; font-weight: 600; margin-bottom: 4px; }
-.mob-fb-text { font-size: 9px; color: #bbb; line-height: 1.6; }
+.mob-fb-title { font-size: calc(10px * var(--ett-fs, 1)); color: #e6a23c; font-weight: 600; margin-bottom: 4px; }
+.mob-fb-text { font-size: calc(9px * var(--ett-fs, 1)); color: #bbb; line-height: 1.6; }
 
 .mob-wave-item {
   display: flex; align-items: center; gap: 6px; padding: 8px 10px;
@@ -367,4 +384,8 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 .mob-apikey-input { flex: 1; max-width: 180px; }
 .mob-apikey-input :deep(.el-input__wrapper) { background: #2d2d3f; box-shadow: none; padding: 2px 8px; }
 .mob-apikey-input :deep(.el-input__inner) { color: #e0e0e0; font-size: 11px; }
+
+.mob-fontsize-ctl { display: flex; gap: 2px; background: #2d2d3f; border-radius: 8px; padding: 2px; }
+.mob-fs-btn { width: 28px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 10px; color: #888; cursor: pointer; }
+.mob-fs-btn.on { background: #409eff; color: #fff; }
 </style>

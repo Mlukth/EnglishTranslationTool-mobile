@@ -851,6 +851,7 @@ let timerInterval = null
 
 const darkMode = ref(true)
 const isMobile = ref(false)
+const fontSize = ref(localStorage.getItem("ett_fontSize") || "medium")
 function checkMobile() { isMobile.value = window.innerWidth < 768 }
 window.addEventListener('resize', checkMobile)
 function openQwen() {
@@ -2739,7 +2740,18 @@ async function copyImagePrompt() {
       imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
     }
 
-    // Copy text + combined image to clipboard (always PNG after conversion)
+    // 手机端优先用 Web Share API（可同时分享文字+图片到其他应用）
+    if (isMobile.value && navigator.share && navigator.canShare) {
+      const file = new File([imageBlob], 'prompt-image.png', { type: 'image/png' })
+      const shareData = { text: prompt, files: [file] }
+      if (navigator.canShare(shareData)) {
+        await navigator.share(shareData)
+        ElMessage.success('已打开分享面板，选择 AI 应用即可发送提示词+截图')
+        return
+      }
+    }
+
+    // 桌面端：ClipboardItem（同时复制文字+图片到剪贴板）
     const clipboardItem = new ClipboardItem({
       'text/plain': Promise.resolve(new Blob([prompt], { type: 'text/plain' })),
       'image/png': Promise.resolve(imageBlob)
@@ -2747,11 +2759,25 @@ async function copyImagePrompt() {
     await navigator.clipboard.write([clipboardItem])
     ElMessage.success(`提示词+${imgs.length}张截图${imgs.length > 1 ? '(已竖拼)' : ''}已复制，直接粘贴到AI窗口即可`)
   } catch (e) {
-    // Fallback: text only
     console.error('copyImagePrompt error:', e)
+    // 剪贴板失败后尝试 Web Share（手机端兜底）
+    if (navigator.share && navigator.canShare && imageBlob) {
+      try {
+        const file = new File([imageBlob], 'prompt-image.png', { type: 'image/png' })
+        const shareData = { text: prompt, files: [file] }
+        if (navigator.canShare(shareData)) {
+          await navigator.share(shareData)
+          ElMessage.success('已打开分享面板')
+          return
+        }
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') return
+      }
+    }
+    // 最终兜底：仅文字
     try {
       await navigator.clipboard.writeText(prompt)
-      ElMessage.warning('仅复制了提示词文本（图片拼接失败：' + e.message + '），请手动附上截图')
+      ElMessage.warning('仅复制了提示词文本，请手动附上截图')
     } catch {
       ElMessage.error('复制失败，请手动复制')
     }
@@ -2928,7 +2954,18 @@ async function copyAllBatchPrompt() {
 
     const imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
     const promptWithHint = `${imageImportPrompt.value}\n\n⚠️ 以上共 ${batchImages.value.length} 张截图（已竖拼，以分隔线区分），请逐张分析，返回一个JSON数组：[{...第1张...}, {...第2张...}, ...]，不要用代码块包裹。`
-    const clipboardItem = new ClipboardItem({
+    // 手机端优先用 Web Share API（可同时分享文字+图片到其他应用）
+    if (isMobile.value && navigator.share && navigator.canShare) {
+      const file = new File([imageBlob], 'batch-images.png', { type: 'image/png' })
+      const shareData = { text: promptWithHint, files: [file] }
+      if (navigator.canShare(shareData)) {
+        await navigator.share(shareData)
+        ElMessage.success('已打开分享面板，选择 AI 应用即可发送提示词+截图')
+        return
+      }
+    }
+
+        const clipboardItem = new ClipboardItem({
       'text/plain': Promise.resolve(new Blob([promptWithHint], { type: 'text/plain' })),
       'image/png': Promise.resolve(imageBlob)
     })
@@ -2936,9 +2973,24 @@ async function copyAllBatchPrompt() {
     ElMessage.success(`提示词+${imgs.length}张截图已复制（图片间有分隔线），直接粘贴到AI窗口`)
   } catch (e) {
     console.error('copyAllBatchPrompt error:', e)
+    // 手机端兜底：Web Share API
+    if (navigator.share && navigator.canShare && imageBlob) {
+      try {
+        const file = new File([imageBlob], 'batch-images.png', { type: 'image/png' })
+        const shareData = { text: promptWithHint, files: [file] }
+        if (navigator.canShare(shareData)) {
+          await navigator.share(shareData)
+          ElMessage.success('已打开分享面板')
+          return
+        }
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') return
+      }
+    }
+    // 最终兜底：仅文字
     try {
       await navigator.clipboard.writeText(imageImportPrompt.value)
-      ElMessage.warning('仅复制了提示词文本（图片拼接失败：' + e.message + '），请手动附上截图')
+      ElMessage.warning('仅复制了提示词文本，请手动附上截图')
     } catch {
       ElMessage.error('复制失败')
     }
@@ -3262,11 +3314,14 @@ watch(darkMode, (v) => {
 }, { immediate: true })
 
 // ========== 生命周期 ==========
+// 字体大小持久化
+watch(fontSize, (v) => localStorage.setItem('ett_fontSize', v))
+
 // provide shared reactive state for MobileApp component
 const ett = reactive({
   // refs
   essays, records, currentEssayId, userTranslation, practiceStarted, elapsed,
-  darkMode, isMobile, apiKey, scoringMode, selectedSeg,
+  darkMode, isMobile, fontSize, apiKey, scoringMode, selectedSeg,
   waveSelectedIdx, waveAnswer, reverseUserTranslation, windowAIInput,
   showAddDialog, showPromptConfig, showVocabPoolDialog, showPhrasePracticeDialog, showWordAnalysis,
   // computed
