@@ -467,7 +467,7 @@
     </el-dialog>
 
     <!-- 历史记录详情面板 (P2) -->
-    <el-drawer v-model="showHistoryPanel" title="练习历史" size="480px" direction="rtl">
+    <el-drawer v-model="showHistoryPanel" title="练习历史" size="85%" direction="rtl">
       <template v-if="historyEssay">
         <div class="history-essay-info">
           <h3>{{ historyEssay.title }}</h3>
@@ -532,7 +532,7 @@
 
 
     <!-- 生词池全量查看对话框 -->
-    <el-dialog v-model="showVocabPoolDialog" title="生词短语池" width="720px" destroy-on-close class="mob-bottom-sheet">
+    <el-dialog v-model="showVocabPoolDialog" title="生词短语池" width="720px" destroy-on-close class="mob-sheet-d">
       <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
         <el-input v-model="vocabSearchQuery" placeholder="搜索单词或释义..." clearable size="small" style="width:260px">
           <template #prefix><el-icon><Search /></el-icon></template>
@@ -676,13 +676,63 @@
       </div>
     </el-dialog>
 
-    <!-- 短语默写练习弹窗 -->
-    <el-dialog v-model="showPhrasePracticeDialog" title="短语默写·中留英填" width="800px" destroy-on-close class="mob-bottom-sheet" @closed="phraseRevealAnswer=false;phraseUserAnswer=''">
+    <!-- 短语默写练习弹窗（方案H：需键盘→全屏） -->
+    <template v-if="isMobile && showPhrasePracticeDialog">
+      <div class="mob-fullscreen-overlay">
+        <div class="mob-fullscreen-hdr">
+          <span style="width:24px"></span>
+          <span class="mob-fullscreen-title">短语默写</span>
+          <span @click="showPhrasePracticeDialog = false; phraseRevealAnswer=false; phraseUserAnswer=''" style="font-size:18px;line-height:1">✕</span>
+        </div>
+        <div class="mob-fullscreen-body" v-if="phraseCards.length">
+          <!-- 卡片组选择 -->
+          <div class="mob-phrase-set-bar">
+            <el-select v-model="phraseSelectedSetId" size="small" placeholder="选择卡片组" style="flex:1" @change="selectPhraseSet(phraseSelectedSetId)">
+              <el-option v-for="set in phraseCards" :key="set.id" :label="set.title + ' (' + set.pairs.length + '对)'" :value="set.id" />
+            </el-select>
+            <span style="font-size:calc(9px*var(--ett-fs,1));color:#888">{{ phraseFilterReview ? '需复习' : '全部' }}</span>
+            <el-switch v-model="phraseFilterReview" size="small" style="margin-left:4px" />
+          </div>
+          <!-- 进度条 -->
+          <div class="mob-phrase-progress" v-if="displayPhrasePairs.length">
+            <span style="font-size:calc(9px*var(--ett-fs,1));color:#888">{{ phraseCurrentIdx + 1 }}/{{ displayPhrasePairs.length }}</span>
+            <el-progress :percentage="Math.round((phraseCurrentIdx + 1) / displayPhrasePairs.length * 100)" :stroke-width="4" style="flex:1;margin:0 8px" />
+          </div>
+          <!-- 练习卡片 -->
+          <div v-if="displayPhrasePairs.length" class="mob-phrase-card" :class="{ revealed: phraseRevealAnswer }">
+            <div class="mob-phrase-zh">{{ displayPhrasePairs[phraseCurrentIdx]?.zh }}</div>
+            <div class="mob-phrase-input-area">
+              <div class="mob-phrase-label">你的英文：</div>
+              <el-input v-model="phraseUserAnswer" type="textarea" :rows="3" resize="vertical"
+                placeholder="根据中文写出英文..." @keyup.enter.exact="phraseRevealAnswer ? phraseMarkReview() : revealPhraseAnswer()" />
+            </div>
+            <div class="mob-phrase-answer" v-if="phraseRevealAnswer">
+              <div class="mob-phrase-label">原文：</div>
+              <div class="mob-phrase-original">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
+            </div>
+            <div class="mob-phrase-btns" v-if="phraseRevealAnswer">
+              <el-button type="danger" plain size="small" @click="phraseMarkReview" style="flex:1">需复习</el-button>
+              <el-button type="success" size="small" @click="phraseMarkCorrect" style="flex:1">正确</el-button>
+            </div>
+            <div class="mob-phrase-btns" v-else>
+              <el-button type="primary" size="small" @click="revealPhraseAnswer" :disabled="!phraseUserAnswer.trim()" style="flex:1">查看答案</el-button>
+            </div>
+          </div>
+          <el-empty v-else description="暂无短语" :image-size="80" />
+          <!-- 翻页 -->
+          <div class="mob-phrase-nav" v-if="displayPhrasePairs.length > 1">
+            <el-button size="small" @click="phrasePrevCard" :disabled="phraseCurrentIdx <= 0">◀ 上一张</el-button>
+            <el-button size="small" @click="phraseNextCard" :disabled="phraseCurrentIdx >= displayPhrasePairs.length - 1">下一张 ▶</el-button>
+          </div>
+        </div>
+        <el-empty v-else description="暂无短语卡片组" :image-size="80" style="margin-top:60px" />
+      </div>
+    </template>
+    <el-dialog v-else v-model="showPhrasePracticeDialog" title="短语默写·中留英填" width="800px" destroy-on-close @closed="phraseRevealAnswer=false;phraseUserAnswer=''">
       <div v-if="!phraseCards.length" style="text-align:center;padding:40px;color:#777">
         <p>暂无短语卡片组，请先通过「图片导入 → 反转短语·中留英填」导入</p>
       </div>
       <div v-else class="phrase-practice-layout">
-        <!-- 左侧卡片组列表 -->
         <div class="phrase-set-list">
           <div class="phrase-set-label">
             卡片组 ({{ phraseCards.length }})
@@ -700,7 +750,6 @@
             <div class="phrase-set-progress">{{ getPhraseProgress(set) }}</div>
           </div>
         </div>
-        <!-- 右侧练习区 -->
         <div class="phrase-practice-area" v-if="phraseSelectedSet">
           <div class="phrase-practice-header">
             <span class="phrase-practice-title">{{ phraseSelectedSet.title }}</span>
@@ -1635,7 +1684,7 @@ function togglePractice() {
 
 // ========== 工具函数 ==========
 function generateId() { return 'ett_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) }
-function getRecord(essayId) { return records.value.find(r => r.essayId === essayId) || null }
+function getRecord(essayId) { const ms = records.value.filter(r => r.essayId === essayId); return ms.length ? ms.sort((a,b) => b.date > a.date ? 1 : -1)[0] : null }
 function hasRecord(dateStr) { return records.value.some(r => r.date === dateStr && r.completed) }
 function isToday(d) { return new Date().toDateString() === d.toDateString() }
 
@@ -3337,6 +3386,36 @@ const ett = reactive({
   get totalTime() { return totalTime.value },
   get renderedFeedback() { return renderedFeedback.value },
   get reverseDisplayRef() { return reverseDisplayRef.value },
+  get diffResult() {
+    const rec = this.rightPanelRecord
+    if (!rec || !this.currentEssay) return { userLines: [], refLines: [] }
+    const userSentences = splitSentences(rec.userTranslation)
+    const refSentences = splitSentences(this.currentEssay.referenceTranslation || '')
+    const errs = rec.errorSpans
+    const max = Math.max(userSentences.length, refSentences.length)
+    const ul = [], rl = []
+    for (let i = 0; i < max; i++) {
+      const u = userSentences[i] || '', r = refSentences[i] || ''
+      if (u === r) { ul.push({ text: u || '(空)', type: 'match' }); rl.push({ text: r || '(空)', type: 'match' }) }
+      else { ul.push({ text: u || '(缺)', html: u ? highlightErrors(u, errs) : '', type: u ? 'diff' : 'missing' }); rl.push({ text: r || '(缺)', type: r ? 'diff' : 'missing' }) }
+    }
+    return { userLines: ul, refLines: rl }
+  },
+  get reverseDiffResult() {
+    const rec = this.rightPanelRecord
+    if (!rec || rec.type !== 'reverse' || !this.currentEssay) return { userLines: [], refLines: [] }
+    const us = splitSentences(rec.userTranslation)
+    const rs = splitSentences(this.currentEssay.originalEN || '')
+    const errs = rec.errorSpans
+    const max = Math.max(us.length, rs.length)
+    const ul = [], rl = []
+    for (let i = 0; i < max; i++) {
+      const u = us[i] || '', r = rs[i] || ''
+      if (u === r) { ul.push({ text: u || '(空)', type: 'match' }); rl.push({ text: r || '(空)', type: 'match' }) }
+      else { ul.push({ text: u || '(缺)', html: u ? highlightErrors(u, errs) : '', type: u ? 'diff' : 'missing' }); rl.push({ text: r || '(缺)', type: r ? 'diff' : 'missing' }) }
+    }
+    return { userLines: ul, refLines: rl }
+  },
   // functions
   getRecord, scoreColor, formatTime,
   submitTranslation, submitWindowAI, submitReverseTranslation, copyReversePrompt,
@@ -3545,19 +3624,19 @@ onMounted(async () => {
 
 /* History */
 .history-btn { font-size:11px; padding:0 2px; margin-left:6px; }
-.history-essay-info h3 { margin:0 0 4px; font-size:16px; color:#f8fafc; }
-.history-meta { font-size:12px; color:#777; margin:0; }
+.history-essay-info h3 { margin:0 0 4px; font-size:calc(16px * var(--ett-fs, 1)); color:#f8fafc; }
+.history-meta { font-size:calc(12px * var(--ett-fs, 1)); color:#777; margin:0; }
 .history-empty { padding:40px 0; }
 .history-record-card { padding:8px 0; }
 .history-record-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-.history-record-date { font-size:13px; font-weight:600; color:#f8fafc; }
-.history-time { font-size:12px; color:#777; margin-left:auto; }
-.history-dims { display:flex; gap:12px; font-size:11px; color:#777; margin-bottom:6px; }
+.history-record-date { font-size:calc(13px * var(--ett-fs, 1)); font-weight:600; color:#f8fafc; }
+.history-time { font-size:calc(12px * var(--ett-fs, 1)); color:#777; margin-left:auto; }
+.history-dims { display:flex; gap:12px; font-size:calc(11px * var(--ett-fs, 1)); color:#777; margin-bottom:6px; }
 .history-dims span { background:#1a1008; padding:2px 6px; border-radius:3px; color:#c1c1c1; }
 .history-translation { margin-bottom:6px; }
-.history-translation p { font-size:12px; color:#a8a8a8; margin:2px 0 0; line-height:1.6; }
-.history-label { font-size:11px; color:#777; font-weight:600; }
-.history-feedback p { font-size:12px; line-height:1.6; margin:2px 0 0; color:#c1c1c1; }
+.history-translation p { font-size:calc(12px * var(--ett-fs, 1)); color:#a8a8a8; margin:2px 0 0; line-height:1.6; }
+.history-label { font-size:calc(11px * var(--ett-fs, 1)); color:#777; font-weight:600; }
+.history-feedback p { font-size:calc(12px * var(--ett-fs, 1)); line-height:1.6; margin:2px 0 0; color:#c1c1c1; }
 
 /* Hint text */
 .hint-text { font-size:11px; color:#777; margin-top:4px; }
@@ -3995,18 +4074,49 @@ html.ett-dark .el-drawer__body { color: #c1c1c1; }
   /* 需键盘 → 全屏（默认） */
   .el-dialog { width: 100% !important; max-width: 100% !important; height: 100dvh !important; max-height: 100dvh !important; margin: 0 !important; border-radius: 0 !important; }
   .el-dialog__body { max-height: calc(100dvh - 110px) !important; overflow-y: auto !important; }
+  /* 方案D：底部抽屉 85% 高屏（生词短语池） */
+  @keyframes mob-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .el-dialog.mob-sheet-d { width: 100% !important; max-width: 100% !important; height: 85dvh !important; max-height: 85dvh !important; position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; top: auto !important; margin: 0 !important; border-radius: 16px 16px 0 0 !important; overflow: hidden !important; transform: none !important; animation: mob-slide-up 0.28s ease-out; }
+  .el-dialog.mob-sheet-d .el-dialog__header { padding-top: 4px !important; }
+  .el-dialog.mob-sheet-d .el-dialog__header::before { content: ""; display: block; width: 32px; height: 4px; border-radius: 2px; background: #555; margin: 4px auto 8px; }
+  .el-dialog.mob-sheet-d .el-dialog__body { max-height: calc(85dvh - 90px) !important; overflow-y: auto !important; }
   /* 不需键盘 → 底部抽屉 */
   .el-overlay:has(.mob-bottom-sheet) { align-items: flex-end !important; }
   .el-dialog.mob-bottom-sheet { width: 100% !important; max-width: 100% !important; height: auto !important; max-height: 75dvh !important; margin: 0 !important; border-radius: 16px 16px 0 0 !important; overflow: hidden !important; }
   .el-dialog.mob-bottom-sheet .el-dialog__header { padding-top: 4px !important; }
   .el-dialog.mob-bottom-sheet .el-dialog__header::before { content: ""; display: block; width: 32px; height: 4px; border-radius: 2px; background: #555; margin: 4px auto 8px; }
   .el-dialog.mob-bottom-sheet .el-dialog__body { max-height: calc(75dvh - 90px) !important; overflow-y: auto !important; }
-  /* el-drawer → 底部抽屉 */
-  .el-drawer { width: 100% !important; height: 65dvh !important; border-radius: 16px 16px 0 0 !important; }
-  .el-drawer__header { padding-top: 4px !important; margin-bottom: 0 !important; }
-  .el-drawer__header::before { content: ""; display: block; width: 32px; height: 4px; border-radius: 2px; background: #555; margin: 4px auto 8px; }
-  .el-drawer__body { max-height: calc(65dvh - 100px) !important; overflow-y: auto !important; }
+  /* el-drawer 保持侧边滑入（方案G：列表类→侧边） */
+  .el-drawer { width: 85% !important; }
+  .el-drawer__body { overflow-y: auto !important; }
 }
+
+/* 方案H 全屏弹窗（需键盘：短语默写/提示词/图片导入） */
+.mob-fullscreen-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0d0d0d; z-index: 3000; display: flex; flex-direction: column; }
+.mob-fullscreen-hdr { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #1e1e1e; flex-shrink: 0; color: #888; font-size: 14px; cursor: pointer; }
+.mob-fullscreen-title { font-size: 15px; font-weight: 700; color: #f8fafc; cursor: default; }
+.mob-fullscreen-body { flex: 1; overflow-y: auto; padding: 14px; }
+.mob-phrase-set-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.mob-phrase-set-bar .el-select { max-width: 65%; }
+.mob-phrase-progress { display: flex; align-items: center; margin-bottom: 14px; }
+.mob-phrase-card { background: #1a1a1a; border-radius: 14px; padding: 18px; margin-bottom: 12px; }
+.mob-phrase-zh { font-size: 15px; color: #e0e0e0; text-align: center; margin-bottom: 14px; font-weight: 600; }
+.mob-phrase-input-area { margin-bottom: 10px; }
+.mob-phrase-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+.mob-phrase-answer { margin-top: 10px; }
+.mob-phrase-original { font-size: 14px; color: #22C55E; background: #0a1a0a; padding: 10px; border-radius: 8px; line-height: 1.5; }
+.mob-phrase-btns { display: flex; gap: 8px; margin-top: 14px; }
+.mob-phrase-nav { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+
+:root { --ett-fs: 1; }
+/* 弹窗/抽屉字体跟随全局缩放 */
+.el-dialog__body { font-size: calc(14px * var(--ett-fs, 1)) !important; }
+.el-dialog__title { font-size: calc(16px * var(--ett-fs, 1)) !important; }
+.el-drawer__body { font-size: calc(14px * var(--ett-fs, 1)) !important; }
+.el-drawer__title { font-size: calc(16px * var(--ett-fs, 1)) !important; }
+.el-dialog__body .el-input__inner { font-size: calc(13px * var(--ett-fs, 1)) !important; }
+.el-dialog__body .el-textarea__inner { font-size: calc(13px * var(--ett-fs, 1)) !important; }
+.el-dialog__body .el-tag { font-size: calc(11px * var(--ett-fs, 1)) !important; }
 
 html.ett-dark .el-divider--horizontal { border-top-color: #1e1e1e; }
 html.ett-dark .el-input__wrapper { background: #141414; box-shadow: 0 0 0 1px #1e1e1e; }
