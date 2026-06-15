@@ -376,28 +376,51 @@
             <div ref="radarChartRef" style="width:100%;height:180px;margin-top:8px"></div>
           </div>
 
-          <!-- 水波纠错展示 -->
-          <div v-if="rightPanelRecord?.mistakeWave?.patternEN && rightPanelRecord.mistakeWave.patternEN !== '无'">
-            <div class="feedback-title">🌊 错误结构分析</div>
-            <div class="mw-block" v-if="rightPanelRecord.mistakeWave.patternEN">
-              <div class="mw-label">卡住你的{{ scoringMode === 'reverse' ? '英文表达' : '英文结构' }}</div>
-              <p class="mw-pattern">{{ rightPanelRecord.mistakeWave.patternEN }}</p>
-            </div>
-            <div class="mw-block" v-if="rightPanelRecord.mistakeWave.whereStuck">
-              <div class="mw-label">为什么容易卡</div>
-              <p class="mw-text">{{ rightPanelRecord.mistakeWave.whereStuck }}</p>
-            </div>
-            <div class="mw-block" v-if="rightPanelRecord.mistakeWave.examples?.length">
-              <div class="mw-label">同类例句</div>
-              <div v-for="(ex, i) in rightPanelRecord.mistakeWave.examples" :key="i" class="mw-ex-row">
-                <span class="mw-ex-en">{{ ex.en }}</span>
-                <span class="mw-ex-arrow">→</span>
-                <span class="mw-ex-zh">{{ ex.zh }}</span>
+          <!-- 错误结构分析（水波纠错） -->
+          <div v-if="normalizeMistakeWaves(rightPanelRecord).length">
+            <div class="feedback-title">🌊 错误结构分析（{{ normalizeMistakeWaves(rightPanelRecord).length }}处）</div>
+            <div v-for="(mw, wi) in normalizeMistakeWaves(rightPanelRecord)" :key="'mw'+wi" class="mw-card">
+              <div class="mw-card-header">
+                <span v-if="mw.sentenceIndex !== null" class="mw-sentence-tag">第{{ mw.sentenceIndex + 1 }}句</span>
+                <span class="mw-error-tag">{{ mw.errorType || '结构性错误' }}</span>
+              </div>
+              <div class="mw-block" v-if="mw.studentError">
+                <div class="mw-label">学生错译</div>
+                <p class="mw-text" style="color:#ef4444">{{ mw.studentError }}</p>
+              </div>
+              <div class="mw-block" v-if="mw.patternEN">
+                <div class="mw-label">卡住你的{{ scoringMode === 'reverse' ? '英文表达' : '英文结构' }}</div>
+                <p class="mw-pattern">{{ mw.patternEN }}</p>
+              </div>
+              <div class="mw-block" v-if="mw.whereStuck">
+                <div class="mw-label">为什么容易卡</div>
+                <p class="mw-text">{{ mw.whereStuck }}</p>
+              </div>
+              <div class="mw-block" v-if="mw.examples?.length">
+                <div class="mw-label">同类例句</div>
+                <div v-for="(ex, i) in mw.examples" :key="i" class="mw-ex-row">
+                  <span class="mw-ex-en">{{ ex.en }}</span>
+                  <span class="mw-ex-arrow">→</span>
+                  <span class="mw-ex-zh">{{ ex.zh }}</span>
+                </div>
+              </div>
+              <div class="mw-block" v-if="mw.nextTime">
+                <div class="mw-label">下次遇到怎么拆</div>
+                <p class="mw-text" style="color:#22C55E">{{ mw.nextTime }}</p>
               </div>
             </div>
-            <div class="mw-block" v-if="rightPanelRecord.mistakeWave.nextTime">
-              <div class="mw-label">下次遇到怎么拆</div>
-              <p class="mw-text">{{ rightPanelRecord.mistakeWave.nextTime }}</p>
+          </div>
+
+          <!-- 翻译错误对照 -->
+          <div v-if="rightPanelRecord?.translationErrors?.length">
+            <div class="feedback-title">📋 翻译错误对照</div>
+            <div class="te-table">
+              <div v-for="(te, i) in rightPanelRecord.translationErrors" :key="'te'+i" class="te-row">
+                <div class="te-cell te-orig">{{ te.originalEN }}</div>
+                <div class="te-cell te-correct">{{ scoringMode === 'reverse' ? (te.correctEN || '') : (te.correctZH || '') }}</div>
+                <div class="te-cell te-wrong">{{ scoringMode === 'reverse' ? (te.studentEN || '') : (te.studentZH || '') }}</div>
+                <div class="te-cell te-note">{{ te.note || '' }}</div>
+              </div>
             </div>
           </div>
 
@@ -1261,6 +1284,19 @@ function extractJSON(text) {
   return null
 }
 
+// ========== 数据结构兼容 ==========
+// 将旧格式单对象 mistakeWave 和新格式数组 mistakeWaves 统一为数组
+function normalizeMistakeWaves(record) {
+  if (!record) return []
+  // 新格式优先
+  if (record.mistakeWaves && Array.isArray(record.mistakeWaves)) return record.mistakeWaves
+  // 旧格式归一化
+  if (record.mistakeWave && record.mistakeWave.patternEN && record.mistakeWave.patternEN !== '无') {
+    return [{ sentenceIndex: null, errorType: '结构性错误', studentError: '', ...record.mistakeWave }]
+  }
+  return []
+}
+
 // ========== 水波训练 ==========
 async function startWaveAnalysis(segIdx) {
   if (!currentEssay.value || !apiKey.value) { ElMessage.warning('请先选择范文并填写API Key'); return }
@@ -1861,7 +1897,7 @@ const SCORING_SYSTEM_PROMPT = `你是考研英语一翻译题的资深评分老�
 - 教辅中重点分析的长难句结构、易错词汇、翻译陷阱——这些是评分时应当特别留意的位置，学生译文在这些点上的表现直接影响对应维度的得分。
 - 教辅的解析角度可作为评分校准参考（如教辅从"定语从句拆分"角度分析某句，你的语法结构评分应同步关注学生是否处理好了这个定语从句）。
 - 教辅不等于标准答案。你对学生译文的整体判断拥有最终决定权。如果教辅的解析角度与学生实际错误不完全对应，以你的专业判断为准。
-- 教辅中的词汇辨析、例句对比等内容，可酌情融入"mistakeWave"和"unknownItems"的回答中，但要标注来源（如"教辅指出……"）。
+- 教辅中的词汇辨析、例句对比等内容，可酌情融入"mistakeWaves"和"unknownItems"的回答中，但要标注来源（如"教辅指出……"）。
 - 如果题目没有附带教辅资料，则跳过上述步骤，完全依靠你的专业能力独立评分。
 
 【输出格式】
@@ -1874,15 +1910,28 @@ const SCORING_SYSTEM_PROMPT = `你是考研英语一翻译题的资深评分老�
   "fluency": 21,
   "total": 78,
   "feedback": "逐句点评（按原文句子编号逐条分析，每句先说学生译文的处理情况，再指出问题或亮点）：\n1. 第一句……\n2. 第二句……",
-  "mistakeWave": {
-    "patternEN": "原文中导致学生翻错的英文句子片段（只选最典型的一个错误结构）",
-    "whereStuck": "这个英文结构为什么容易卡住中国学生（用白话解释，禁止使用语法术语如'定语从句''后置定语'等，要说'这部分在补充说明xxx''这个词其实是修饰前面的xxx'）",
-    "examples": [
-      {"en": "与错误结构同类的英文例句1", "zh": "对应的中文翻译1"},
-      {"en": "与错误结构同类的英文例句2", "zh": "对应的中文翻译2"}
-    ],
-    "nextTime": "下次看到类似英文结构时，大脑应该怎么做（给出可操作的拆解步骤，用白话，禁止术语）"
-  },
+  "mistakeWaves": [
+    {
+      "sentenceIndex": 0,
+      "errorType": "错误类型中文标签（如：修饰位置错误、语序混乱、英文硬翻、搭配断裂、否定漏译、分隔结构未识别等）",
+      "studentError": "学生译文中对应的错译片段（摘录原文）",
+      "patternEN": "原文中导致学生翻错的英文句子片段",
+      "whereStuck": "这个英文结构为什么容易卡住中国学生（用白话解释，禁止使用语法术语如'定语从句''后置定语'等，要说'这部分在补充说明xxx''这个词其实是修饰前面的xxx'）",
+      "examples": [
+        {"en": "与错误结构同类的英文例句1", "zh": "对应的中文翻译1"},
+        {"en": "与错误结构同类的英文例句2", "zh": "对应的中文翻译2"}
+      ],
+      "nextTime": "下次看到类似英文结构时，大脑应该怎么做（给出可操作的拆解步骤，用白话，禁止术语）"
+    }
+  ],
+  "translationErrors": [
+    {
+      "originalEN": "原文中翻错的单词/短语",
+      "correctZH": "正确的中文翻译",
+      "studentZH": "学生错误翻译成什么",
+      "note": "一句话解释为什么容易错（如：固定搭配不能逐字翻、熟词僻义、构词法漏看否定前缀等）"
+    }
+  ],
   "unknownItems": [
     {
       "item": "原文中翻错或不认识的单词/短语",
@@ -1896,8 +1945,9 @@ const SCORING_SYSTEM_PROMPT = `你是考研英语一翻译题的资深评分老�
 }
 
 【字段说明】
-- mistakeWave：只选取学生译文中最典型的一处结构性错误进行分析，不必面面俱到。如果没有明显的结构错误，patternEN和whereStuck可填"无"、examples为空数组。
-- unknownItems：提取学生译文中所有翻错或不认识的单词短语。每个词标注category（语义类别）和level（难度等级）。如果学生全部翻译正确，返回空数组[]。
+- mistakeWaves：对feedback中逐句指出的每一个结构性错误（如语序混乱、修饰位置错、搭配断裂、否定漏译等），各生成一条水波分析。sentenceIndex从0开始，对应第几句。errorType用中文标签概括错误类型。studentError摘录学生错译原文。如果某句没有结构性错误则跳过该句。如果整篇没有结构性错误，返回空数组[]。
+- translationErrors：逐条列出学生译文中的词汇/短语翻译错误。originalEN是原文单词/短语，correctZH是正确翻译，studentZH是学生错译成什么，note用一句话提示为什么容易错。词汇性错误与结构性错误分开——这里的错误是因为不认识单词、选错词义、望文生义，不是因为看不懂句子结构。如果全部翻译正确，返回空数组[]。
+- unknownItems：同上，提取所有翻错或不认识的单词短语喂养生词池。每个词标注category和level。如果全部正确返回空数组[]。
 - errorSpans：精确摘录学生译文中翻译有误的中文字词片段（不是整句），用于前端标红显示。每个片段尽量控制在2-6个字，定位到具体的错误词或短语。如果无法精确定位到片段，返回空数组[]。`;
 
 const SEGMENT_PROMPT = `请将以下英文段落处理为考研英语一翻译练习题格式。返回严格JSON：
@@ -1946,15 +1996,28 @@ const REVERSE_SCORING_PROMPT = `你是考研英语翻译题的资深评分老师
   "fluency": 21,
   "total": 78,
   "feedback": "逐句点评（按句子逐条分析学生的英译与原文的差异）：\\n1. 第一句……\\n2. 第二句……",
-  "mistakeWave": {
-    "patternEN": "学生英文译文中出错的英文片段（只选最典型的一处错误）",
-    "whereStuck": "这个表达为什么容易出错，中文母语者在转英文时为什么会踩这个坑（用白话解释）",
-    "examples": [
-      {"en": "正确的英文表达例句1", "zh": "对应的中文1"},
-      {"en": "正确的英文表达例句2", "zh": "对应的中文2"}
-    ],
-    "nextTime": "下次从中文转英文时，遇到类似表达应该怎么处理（给出可操作的步骤，用白话）"
-  },
+  "mistakeWaves": [
+    {
+      "sentenceIndex": 0,
+      "errorType": "错误类型中文标签（如：时态错误、语序混乱、搭配错误、冠词遗漏、句式选择不当等）",
+      "studentError": "学生英译中对应的出错片段",
+      "patternEN": "学生英文译文中出错的英文片段",
+      "whereStuck": "这个表达为什么容易出错，中文母语者在转英文时为什么会踩这个坑（用白话解释）",
+      "examples": [
+        {"en": "正确的英文表达例句1", "zh": "对应的中文1"},
+        {"en": "正确的英文表达例句2", "zh": "对应的中文2"}
+      ],
+      "nextTime": "下次从中文转英文时，遇到类似表达应该怎么处理（给出可操作的步骤，用白话）"
+    }
+  ],
+  "translationErrors": [
+    {
+      "originalEN": "学生写的错误英文表达",
+      "correctEN": "正确的地道英文表达",
+      "studentEN": "学生写的错误版本（摘录）",
+      "note": "一句话解释为什么容易错（如：中式英语、搭配不当、词不达意等）"
+    }
+  ],
   "unknownItems": [
     {
       "item": "学生用错或不认识的英文单词/短语",
@@ -1968,8 +2031,9 @@ const REVERSE_SCORING_PROMPT = `你是考研英语翻译题的资深评分老师
 }
 
 【字段说明】
-- mistakeWave：只选取学生英译中最典型的一处错误进行分析。如果没有明显错误，patternEN和whereStuck可填"无"、examples为空数组。
-- unknownItems：提取学生英译中所有用错或不地道的单词短语。如果表达完全正确，返回空数组[]。
+- mistakeWaves：对feedback中逐句指出的每一个结构性/表达性错误，各生成一条水波分析。sentenceIndex从0开始。errorType用中文标签。如果整篇没有明显错误，返回空数组[]。
+- translationErrors：逐条列出词汇/短语层面的翻译错误，给出正确vs错误的对照。词汇性错误与结构性错误分开。没有则返回空数组[]。
+- unknownItems：同上，提取所有用错或不地道的单词短语。没有则返回空数组[]。
 - errorSpans：精确摘录学生英译中有误的英文片段（不是整句），每个片段尽量控制在2-5个单词，用于前端标红显示。如果无法精确定位，返回空数组[]。`;
 
 const WORD_ROOT_PROMPT = `你是英语词源学专家，精通词根词缀拆解。分析以下英文单词，返回严格的JSON格式（不要markdown代码块）：
@@ -2203,7 +2267,8 @@ function saveScoreResult(parsed) {
     record.completed = true
     record.timeSpent = Math.max(record.timeSpent || 0, elapsed.value)
     record.date = essay.date
-    if (parsed.mistakeWave) record.mistakeWave = parsed.mistakeWave
+    if (parsed.mistakeWaves) record.mistakeWaves = parsed.mistakeWaves
+    if (parsed.translationErrors) record.translationErrors = parsed.translationErrors
     if (parsed.unknownItems) record.unknownItems = parsed.unknownItems
     if (parsed.errorSpans) record.errorSpans = parsed.errorSpans
   } else {
@@ -2217,7 +2282,8 @@ function saveScoreResult(parsed) {
       feedback: parsed.feedback,
       timeSpent: elapsed.value,
       completed: true,
-      ...(parsed.mistakeWave ? { mistakeWave: parsed.mistakeWave } : {}),
+      ...(parsed.mistakeWaves ? { mistakeWaves: parsed.mistakeWaves } : {}),
+      ...(parsed.translationErrors ? { translationErrors: parsed.translationErrors } : {}),
       ...(parsed.unknownItems ? { unknownItems: parsed.unknownItems } : {}),
       ...(parsed.errorSpans ? { errorSpans: parsed.errorSpans } : {})
     })
@@ -2322,7 +2388,8 @@ function saveReverseScoreResult(parsed) {
     score: { accuracy: parsed.accuracy, grammar: parsed.grammar, vocabulary: parsed.vocabulary, fluency: parsed.fluency },
     totalScore: parsed.total,
     feedback: parsed.feedback,
-    mistakeWave: parsed.mistakeWave,
+    mistakeWaves: parsed.mistakeWaves,
+    translationErrors: parsed.translationErrors,
     unknownItems: parsed.unknownItems,
     errorSpans: parsed.errorSpans,
     timeSpent: elapsed.value,
@@ -2451,8 +2518,8 @@ function onEssayDrop(e, dropIdx) {
 }
 
 // ========== 导入导出 ==========
-function exportData() {
-  const blob = new Blob([JSON.stringify({
+function buildBackupJSON() {
+  return {
     essays: essays.value,
     records: records.value,
     settings,
@@ -2466,11 +2533,62 @@ function exportData() {
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
     exportVersion: 6
-  }, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a'); a.href = url; a.download = `english-translation-backup-${new Date().toISOString().slice(0,10)}.json`; a.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success('完整备份已导出（含全部6组提示词、短语卡片、生词数据、批注、用量）')
+  }
+}
+
+async function exportData() {
+  const json = JSON.stringify(buildBackupJSON(), null, 2)
+  const fileName = `ett-backup-${new Date().toISOString().slice(0,10)}.json`
+
+  if (isMobile.value) {
+    // 手机端：写 Capacitor Filesystem + 分享
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem')
+      await Filesystem.writeFile({
+        path: fileName,
+        data: json,
+        directory: Directory.Documents,
+      })
+      ElMessage.success(`已导出到 app 文档目录: ${fileName}`)
+    } catch (e) {
+      // fallback: Blob 下载
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('已导出（浏览器下载）')
+    }
+  } else {
+    // 桌面端：Blob 下载
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('完整备份已导出（含全部6组提示词、短语卡片、生词数据、批注、用量）')
+  }
+}
+
+async function shareBackup() {
+  const json = JSON.stringify(buildBackupJSON(), null, 2)
+  const fileName = `ett-backup-${new Date().toISOString().slice(0,10)}.json`
+  try {
+    if (navigator.share && navigator.canShare) {
+      const file = new File([json], fileName, { type: 'application/json' })
+      const data = { files: [file], title: 'ETT 数据备份' }
+      if (navigator.canShare(data)) {
+        await navigator.share(data)
+        return
+      }
+    }
+  } catch (e) { /* 用户取消分享 */ }
+  // fallback: 写文件 + 提示
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem')
+    await Filesystem.writeFile({ path: fileName, data: json, directory: Directory.Documents })
+    ElMessage.success(`已保存到 app 文档目录: ${fileName}`)
+  } catch (e) {
+    ElMessage.error('分享和保存均失败，请检查存储权限')
+  }
 }
 
 let _autoExported = false
@@ -3420,7 +3538,7 @@ const ett = reactive({
   getRecord, scoreColor, formatTime,
   submitTranslation, submitWindowAI, submitReverseTranslation, copyReversePrompt,
   startPractice, openQwen, openImageImport, openHistoryPanel,
-  selectWaveSegment, onWordClick, exportData, triggerImport,
+  selectWaveSegment, onWordClick, exportData, triggerImport, normalizeMistakeWaves, shareBackup,
 })
 provide('ett', ett)
 
@@ -3959,6 +4077,25 @@ onMounted(async () => {
 .mw-ex-en { color: #c1c1c1; }
 .mw-ex-arrow { color: #555; flex-shrink: 0; }
 .mw-ex-zh { color: #777; }
+
+/* 错误结构卡片 */
+.mw-card {
+  border: 1px solid #2d2d3f; border-radius: 10px; padding: 12px; margin-bottom: 10px;
+  background: #0d0d0d;
+}
+.mw-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mw-sentence-tag { font-size: 11px; background: #409eff; color: #fff; padding: 1px 8px; border-radius: 10px; }
+.mw-error-tag { font-size: 11px; background: #e6a23c; color: #fff; padding: 1px 8px; border-radius: 10px; }
+
+/* 翻译错误对照表 */
+.te-table { border-radius: 10px; overflow: hidden; border: 1px solid #2d2d3f; margin-bottom: 12px; }
+.te-row { display: flex; border-bottom: 1px solid #1e1e30; }
+.te-row:last-child { border-bottom: none; }
+.te-cell { padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+.te-orig { flex: 0 0 140px; color: #ff5f00; font-family: monospace; border-right: 1px solid #1e1e30; background: #0d0d0d; }
+.te-correct { flex: 0 0 120px; color: #22C55E; border-right: 1px solid #1e1e30; }
+.te-wrong { flex: 0 0 130px; color: #ef4444; border-right: 1px solid #1e1e30; text-decoration: line-through; text-decoration-color: #ef444466; }
+.te-note { flex: 1; color: #888; font-size: 11px; }
 
 /* ========== 生词短语池 ========== */
 .vocab-pool-card {

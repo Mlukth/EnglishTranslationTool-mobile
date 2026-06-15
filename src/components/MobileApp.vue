@@ -108,34 +108,65 @@
           <!-- 译文对照 -->
           <div v-if="$.diffResult.userLines.length && $.scoringMode !== 'reverse'" class="mob-section-label">译文对照 <span style="font-weight:400;font-size:calc(8px * var(--ett-fs, 1));color:#888">🟢匹配 🟡差异 🔴缺失</span></div>
           <div v-if="$.diffResult.userLines.length && $.scoringMode !== 'reverse'" class="mob-cmp">
-            <div v-for="(line,i) in $.diffResult.refLines" :key="'c'+i" style="font-size:calc(9px * var(--ett-fs, 1));line-height:1.6;margin-bottom:2px">
-              <div :style="{color: line.type==='match'?'#22C55E':line.type==='diff'?'#e6a23c':'#ef4444'}"><b :style="{color: line.type==='match'?'#22C55E':'#888'}">参：</b><span v-if="line.type==='diff'&&$.diffResult.userLines[i]" v-html="$.diffResult.userLines[i].html||$.diffResult.userLines[i].text"></span><span v-else>{{ line.text }}</span></div>
+            <div v-for="(line,i) in $.diffResult.userLines" :key="'c'+i" style="margin-bottom:6px">
+              <div :style="{color: line.type==='match'?'#22C55E':line.type==='diff'?'#e6a23c':'#ef4444', fontSize: 'calc(9px * var(--ett-fs, 1))', lineHeight: '1.6'}">
+                <b :style="{color: line.type==='match'?'#22C55E':'#f87171'}">你：</b>
+                <span v-if="line.html" v-html="line.html"></span>
+                <span v-else>{{ line.text }}</span>
+              </div>
+              <div :style="{color: ($.diffResult.refLines[i]?.type==='match'?'#22C55E':'#888'), fontSize: 'calc(9px * var(--ett-fs, 1))', lineHeight: '1.6'}">
+                <b :style="{color: ($.diffResult.refLines[i]?.type==='match'?'#22C55E':'#888')}">参：</b>
+                <span>{{ $.diffResult.refLines[i]?.text || '(空)' }}</span>
+              </div>
             </div>
           </div>
           <!-- 错误结构分析（水波纠错） -->
-          <template v-if="$.rightPanelRecord?.mistakeWave?.patternEN && $.rightPanelRecord.mistakeWave.patternEN !== '无' && $.scoringMode !== 'reverse'">
-            <div class="mob-section-label">🌊 错误结构分析</div>
-            <div class="mob-wave-box">
-              <div class="mob-wave-row" v-if="$.rightPanelRecord.mistakeWave.patternEN">
+          <template v-if="$.normalizeMistakeWaves($.rightPanelRecord).length && $.scoringMode !== 'reverse'">
+            <div class="mob-section-label">🌊 错误结构分析（{{ $.normalizeMistakeWaves($.rightPanelRecord).length }}处）</div>
+            <div v-for="(mw, wi) in $.normalizeMistakeWaves($.rightPanelRecord)" :key="'mw'+wi" class="mob-wave-box">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                <span v-if="mw.sentenceIndex !== null" style="font-size:calc(9px*var(--ett-fs,1));background:#409eff;color:#fff;padding:1px 6px;border-radius:8px">第{{ mw.sentenceIndex + 1 }}句</span>
+                <span style="font-size:calc(9px*var(--ett-fs,1));background:#e6a23c;color:#fff;padding:1px 6px;border-radius:8px">{{ mw.errorType || '结构性错误' }}</span>
+              </div>
+              <div class="mob-wave-row" v-if="mw.studentError">
+                <span class="mob-wave-lbl">学生错译</span>
+                <span style="font-size:calc(9px*var(--ett-fs,1));color:#ef4444;line-height:1.5">{{ mw.studentError }}</span>
+              </div>
+              <div class="mob-wave-row" v-if="mw.patternEN">
                 <span class="mob-wave-lbl">卡住的{{ $.scoringMode==='reverse'?'英文表达':'英文结构' }}</span>
-                <span class="mob-wave-en">{{ $.rightPanelRecord.mistakeWave.patternEN }}</span>
+                <span class="mob-wave-en">{{ mw.patternEN }}</span>
               </div>
-              <div class="mob-wave-row" v-if="$.rightPanelRecord.mistakeWave.whereStuck">
+              <div class="mob-wave-row" v-if="mw.whereStuck">
                 <span class="mob-wave-lbl">为什么容易卡</span>
-                <span class="mob-wave-zh">{{ $.rightPanelRecord.mistakeWave.whereStuck }}</span>
+                <span class="mob-wave-zh">{{ mw.whereStuck }}</span>
               </div>
-              <div v-if="$.rightPanelRecord.mistakeWave.examples?.length">
+              <div v-if="mw.examples?.length">
                 <div class="mob-wave-lbl" style="padding:2px 0">💡 同类例句</div>
-                <div v-for="(ex,i) in $.rightPanelRecord.mistakeWave.examples" :key="'ex'+i" class="mob-wave-ex">
+                <div v-for="(ex,i) in mw.examples" :key="'ex'+i" class="mob-wave-ex">
                   <span class="mob-wave-ex-en">{{ ex.en }}</span>
                   <span class="mob-wave-ex-arrow">→</span>
                   <span class="mob-wave-ex-zh">{{ ex.zh }}</span>
                 </div>
               </div>
-              <div class="mob-wave-row" v-if="$.rightPanelRecord.mistakeWave.nextTime">
+              <div class="mob-wave-row" v-if="mw.nextTime">
                 <span class="mob-wave-lbl">下次遇到怎么拆</span>
-                <span class="mob-wave-tip">{{ $.rightPanelRecord.mistakeWave.nextTime }}</span>
+                <span class="mob-wave-tip">{{ mw.nextTime }}</span>
               </div>
+            </div>
+          </template>
+          <!-- 翻译错误对照（手机） -->
+          <template v-if="$.rightPanelRecord?.translationErrors?.length">
+            <div class="mob-section-label">📋 翻译错误对照</div>
+            <div v-for="(te, i) in $.rightPanelRecord.translationErrors" :key="'te'+i" class="mob-wave-box" style="padding:8px 10px">
+              <div style="display:flex;flex-wrap:wrap;gap:4px;font-size:calc(9px*var(--ett-fs,1));line-height:1.5">
+                <span style="color:#ff5f00;font-family:monospace;margin-right:4px">{{ te.originalEN }}</span>
+                <span style="color:#888">→</span>
+                <span style="color:#22C55E;margin:0 4px">{{ $.scoringMode==='reverse' ? (te.correctEN || '') : (te.correctZH || '') }}</span>
+                <span style="color:#888">（你译：</span>
+                <span style="color:#ef4444;text-decoration:line-through">{{ $.scoringMode==='reverse' ? (te.studentEN || '') : (te.studentZH || '') }}</span>
+                <span style="color:#888">）</span>
+              </div>
+              <div v-if="te.note" style="font-size:calc(8px*var(--ett-fs,1));color:#666;margin-top:2px">{{ te.note }}</div>
             </div>
           </template>
         </template>
@@ -185,8 +216,16 @@
             <!-- 反转译文对照 -->
             <div v-if="$.reverseDiffResult.userLines.length" class="mob-section-label">译文对照（反转）</div>
             <div v-if="$.reverseDiffResult.userLines.length" class="mob-cmp">
-              <div v-for="(line,i) in $.reverseDiffResult.refLines" :key="'rc'+i" style="font-size:calc(9px * var(--ett-fs, 1));line-height:1.6;margin-bottom:2px">
-                <div :style="{color: line.type==='match'?'#22C55E':line.type==='diff'?'#e6a23c':'#ef4444'}"><b :style="{color: line.type==='match'?'#22C55E':'#888'}">原：</b><span v-if="line.type==='diff'&&$.reverseDiffResult.userLines[i]" v-html="$.reverseDiffResult.userLines[i].html||$.reverseDiffResult.userLines[i].text"></span><span v-else>{{ line.text }}</span></div>
+              <div v-for="(line,i) in $.reverseDiffResult.userLines" :key="'rc'+i" style="margin-bottom:6px">
+                <div :style="{color: line.type==='match'?'#22C55E':line.type==='diff'?'#e6a23c':'#ef4444', fontSize: 'calc(9px * var(--ett-fs, 1))', lineHeight: '1.6'}">
+                  <b :style="{color: line.type==='match'?'#22C55E':'#f87171'}">你：</b>
+                  <span v-if="line.html" v-html="line.html"></span>
+                  <span v-else>{{ line.text }}</span>
+                </div>
+                <div :style="{color: ($.reverseDiffResult.refLines[i]?.type==='match'?'#22C55E':'#888'), fontSize: 'calc(9px * var(--ett-fs, 1))', lineHeight: '1.6'}">
+                  <b :style="{color: ($.reverseDiffResult.refLines[i]?.type==='match'?'#22C55E':'#888')}">英文原文：</b>
+                  <span>{{ $.reverseDiffResult.refLines[i]?.text || '(空)' }}</span>
+                </div>
               </div>
             </div>
           </template>
@@ -258,6 +297,10 @@
         <div class="mob-setting-row" @click="$.exportData">
           <span>📤 导出数据</span>
           <span style="font-size:calc(9px * var(--ett-fs, 1));color:#888">JSON 备份</span>
+        </div>
+        <div class="mob-setting-row" @click="$.shareBackup">
+          <span>📲 分享备份</span>
+          <span style="font-size:calc(9px * var(--ett-fs, 1));color:#888">发送到…</span>
         </div>
         <div class="mob-setting-row" @click="$.triggerImport">
           <span>📥 导入数据</span>
