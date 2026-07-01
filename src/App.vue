@@ -902,6 +902,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, CopyDocument, Link, VideoPlay, ArrowLeft, Loading, Search } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { Filesystem, Directory } from '@capacitor/filesystem'
+import { App } from '@capacitor/app'
 import MobileApp from './components/MobileApp.vue'
 
 // ========== 数据状态 ==========
@@ -1583,20 +1584,7 @@ const diffResult = computed(() => {
   if (!scoredRecord.value || !currentEssay.value) return { userLines: [], refLines: [] }
   const userSentences = splitSentences(scoredRecord.value.userTranslation)
   const refSentences = splitSentences(currentEssay.value.referenceTranslation)
-  const errorSpans = scoredRecord.value.errorSpans
-  const maxLen = Math.max(userSentences.length, refSentences.length)
-  const userLines = [], refLines = []
-  for (let i = 0; i < maxLen; i++) {
-    const u = userSentences[i] || '', r = refSentences[i] || ''
-    if (u === r) {
-      userLines.push({ text: u || '(空)', type: 'match' })
-      refLines.push({ text: r || '(空)', type: 'match' })
-    } else {
-      userLines.push({ text: u || '(缺)', html: u ? highlightErrors(u, errorSpans) : '', type: u ? 'diff' : 'missing' })
-      refLines.push({ text: r || '(缺)', type: r ? 'diff' : 'missing' })
-    }
-  }
-  return { userLines, refLines }
+  return smartAlign(userSentences, refSentences, scoredRecord.value.errorSpans)
 })
 
 const renderedFeedback = computed(() => {
@@ -1635,20 +1623,7 @@ const reverseDiffResult = computed(() => {
   if (!reverseScoredRecord.value || !currentEssay.value) return { userLines: [], refLines: [] }
   const userSentences = splitSentences(reverseScoredRecord.value.userTranslation)
   const refSentences = splitSentences(currentEssay.value.originalEN)
-  const errorSpans = reverseScoredRecord.value.errorSpans
-  const maxLen = Math.max(userSentences.length, refSentences.length)
-  const userLines = [], refLines = []
-  for (let i = 0; i < maxLen; i++) {
-    const u = userSentences[i] || '', r = refSentences[i] || ''
-    if (u === r) {
-      userLines.push({ text: u || '(空)', type: 'match' })
-      refLines.push({ text: r || '(空)', type: 'match' })
-    } else {
-      userLines.push({ text: u || '(缺)', html: u ? highlightErrors(u, errorSpans) : '', type: u ? 'diff' : 'missing' })
-      refLines.push({ text: r || '(缺)', type: r ? 'diff' : 'missing' })
-    }
-  }
-  return { userLines, refLines }
+  return smartAlign(userSentences, refSentences, reverseScoredRecord.value.errorSpans)
 })
 
 const showVocabPool = ref(false)
@@ -1725,7 +1700,117 @@ function hasRecord(dateStr) { return records.value.some(r => r.date === dateStr 
 function isToday(d) { return new Date().toDateString() === d.toDateString() }
 
 function splitSentences(text) {
-  return text.split(/(?<=[。！？；\n])/).map(s => s.trim()).filter(Boolean)
+  const norm = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // 先按中英文句末标点切分
+  let parts = norm.split(/(?<=[。！？；.!?;])/)
+  let out = []
+  for (const p of parts) {
+    const trimmed = p.trim()
+    if (trimmed) out.push(trimmed)
+  }
+  if (!out.length) return [norm.trim()].filter(Boolean)
+  // 检测标点密度：如果几乎没打句末标点（平均>80字才一个），
+  // 说明用户靠换行分隔句子——把换行当作句子边界
+  const punctCount = (norm.match(/[。！？.!?]/g) || []).length
+  if (punctCount === 0 || norm.length / punctCount > 80) {
+    const out2 = []
+    for (const s of out) {
+      if (s.includes('\n')) {
+        // 先按连续换行（段落）拆，再按单换行拆
+        const paras = s.split(/\n{2,}/).filter(Boolean)
+        for (const para of paras) {
+          const lines = para.split(/\n/).filter(Boolean)
+          for (const line of lines) {
+            const t = line.trim()
+            if (t) out2.push(t)
+          }
+        }
+      } else {
+        out2.push(s)
+      }
+    }
+    out = out2
+  }
+  // 标点充足 → 忽略换行（用户习惯好，换行只是视觉换行）
+  return out
+}
+
+/** 基于LCS最长公共子序列的贪心对齐：参考句找最相似的用户句（中文远优于字符集重叠率） */
+function smartAlign(userSentences, refSentences, errorSpans) {
+  if (!refSentences.length) {
+    return {
+      userLines: userSentences.map(u => ({ text: u, html: highlightErrors(u, errorSpans), type: 'diff' })),
+      refLines: userSentences.map(() => ({ text: '(缺)', type: 'missing' }))
+    }
+  }
+  if (!userSentences.length) {
+    return {
+      userLines: refSentences.map(() => ({ text: '(缺)', type: 'missing' })),
+      refLines: refSentences.map(r => ({ text: r, type: 'diff' }))
+    }
+  }
+  // LCS 长度（滚动数组节省内存）
+  function lcsLen(a, b) {
+    const m = a.length, n = b.length
+    const dp = new Array(n + 1).fill(0)
+    for (let i = 1; i <= m; i++) {
+      let prev = 0
+      for (let j = 1; j <= n; j++) {
+        const temp = dp[j]
+        dp[j] = a[i - 1] === b[j - 1] ? prev + 1 : Math.max(dp[j], dp[j - 1])
+        prev = temp
+      }
+    }
+    return dp[n]
+  }
+  // Dice 系数 = 2*LCS / (lenA + lenB)，捕捉字符顺序而非仅字符集合
+  const sim = (a, b) => {
+    if (!a || !b) return 0
+    const sa = a.replace(/\s/g, ''), sb = b.replace(/\s/g, '')
+    if (!sa || !sb) return 0
+    const lcs = lcsLen(sa, sb)
+    return (2 * lcs) / (sa.length + sb.length)
+  }
+  const usedUser = new Set()
+  const pairs = []
+  for (const ref of refSentences) {
+    let bestIdx = -1, bestScore = 0
+    for (let i = 0; i < userSentences.length; i++) {
+      if (usedUser.has(i)) continue
+      const score = sim(userSentences[i], ref)
+      if (score > bestScore) { bestScore = score; bestIdx = i }
+    }
+    if (bestIdx >= 0 && bestScore > 0.15) {
+      usedUser.add(bestIdx)
+      pairs.push({ u: userSentences[bestIdx], r: ref })
+    } else {
+      pairs.push({ u: null, r: ref })
+    }
+  }
+  // 未匹配的用户句追加到末尾
+  for (let i = 0; i < userSentences.length; i++) {
+    if (!usedUser.has(i)) pairs.push({ u: userSentences[i], r: null })
+  }
+  // 生成结果行
+  const userLines = [], refLines = []
+  for (const p of pairs) {
+    const u = p.u, r = p.r
+    if (u && r && u === r) {
+      userLines.push({ text: u, type: 'match' })
+      refLines.push({ text: r, type: 'match' })
+    } else {
+      userLines.push({
+        text: u || '(缺)',
+        html: u ? highlightErrors(u, errorSpans) : '',
+        type: u ? (r ? 'diff' : 'extra') : 'missing'
+      })
+      refLines.push({
+        text: r || '(缺)',
+        type: r ? (u ? 'diff' : 'extra') : 'missing'
+      })
+    }
+  }
+  return { userLines, refLines }
 }
 
 function highlightErrors(text, errorSpans) {
@@ -1772,6 +1857,8 @@ function syncData() {
         manualVocab: manualVocab.value,
         wordRoots: wordRootsStore,
         phraseCards: phraseCards.value,
+        translationDrafts: Object.assign({}, translationDrafts),
+        timerStates: Object.assign({}, timerStates),
         exportVersion: 6
       }
       localStorage.setItem('ett_backup', JSON.stringify(backup))
@@ -1814,6 +1901,8 @@ async function flushSave() {
     manualVocab: manualVocab.value,
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
+    translationDrafts: Object.assign({}, translationDrafts),
+    timerStates: Object.assign({}, timerStates),
     exportVersion: 6
   }
   try { localStorage.setItem('ett_backup', JSON.stringify(backup)) } catch {}
@@ -1856,6 +1945,8 @@ function restoreBackupData(data) {
   if (data.manualVocab) manualVocab.value = data.manualVocab
   if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots) }
   if (data.phraseCards) phraseCards.value = data.phraseCards
+  if (data.translationDrafts) Object.assign(translationDrafts, data.translationDrafts)
+  if (data.timerStates) Object.assign(timerStates, data.timerStates)
 }
 
 // ========== AI评分 ==========
@@ -2632,6 +2723,41 @@ function importData(file) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result)
+      // 自动识别：如果顶层有 pairs 且元素含 en/zh → 当作单组短语卡片导入
+      if (data.pairs && Array.isArray(data.pairs) && data.pairs.length && data.pairs[0].en !== undefined && data.pairs[0].zh !== undefined) {
+        phraseCards.value.push({
+          id: generateId(),
+          title: data.title || 'JSON导入',
+          source: data.source || '',
+          date: data.date || new Date().toISOString().slice(0, 10),
+          sourceNote: data.sourceNote || '',
+          pairs: data.pairs.map(p => ({ en: p.en, zh: p.zh })),
+          practiceState: {}
+        })
+        syncData()
+        ElMessage.success(`短语卡片导入成功：「${data.title || '未命名'}」(${data.pairs.length}对)`)
+        return
+      }
+      // 如果顶层是数组且元素含 pairs → 当作多组短语卡片
+      if (Array.isArray(data) && data.length && data[0].pairs && data[0].pairs[0]?.en !== undefined) {
+        let imported = 0
+        for (const item of data) {
+          if (!item.pairs?.length) continue
+          phraseCards.value.push({
+            id: generateId(),
+            title: item.title || '批量导入',
+            source: item.source || '',
+            date: item.date || new Date().toISOString().slice(0, 10),
+            sourceNote: item.sourceNote || '',
+            pairs: item.pairs.map(p => ({ en: p.en, zh: p.zh })),
+            practiceState: {}
+          })
+          imported += item.pairs.length
+        }
+        syncData()
+        ElMessage.success(`短语卡片批量导入：${data.length}组，共${imported}对`)
+        return
+      }
       if (data.essays) essays.value = data.essays
       if (data.records) records.value = data.records
       if (data.settings) Object.assign(settings, data.settings)
@@ -3507,32 +3633,20 @@ const ett = reactive({
   get diffResult() {
     const rec = this.rightPanelRecord
     if (!rec || !this.currentEssay) return { userLines: [], refLines: [] }
-    const userSentences = splitSentences(rec.userTranslation)
-    const refSentences = splitSentences(this.currentEssay.referenceTranslation || '')
-    const errs = rec.errorSpans
-    const max = Math.max(userSentences.length, refSentences.length)
-    const ul = [], rl = []
-    for (let i = 0; i < max; i++) {
-      const u = userSentences[i] || '', r = refSentences[i] || ''
-      if (u === r) { ul.push({ text: u || '(空)', type: 'match' }); rl.push({ text: r || '(空)', type: 'match' }) }
-      else { ul.push({ text: u || '(缺)', html: u ? highlightErrors(u, errs) : '', type: u ? 'diff' : 'missing' }); rl.push({ text: r || '(缺)', type: r ? 'diff' : 'missing' }) }
-    }
-    return { userLines: ul, refLines: rl }
+    return smartAlign(
+      splitSentences(rec.userTranslation),
+      splitSentences(this.currentEssay.referenceTranslation || ''),
+      rec.errorSpans
+    )
   },
   get reverseDiffResult() {
     const rec = this.rightPanelRecord
     if (!rec || rec.type !== 'reverse' || !this.currentEssay) return { userLines: [], refLines: [] }
-    const us = splitSentences(rec.userTranslation)
-    const rs = splitSentences(this.currentEssay.originalEN || '')
-    const errs = rec.errorSpans
-    const max = Math.max(us.length, rs.length)
-    const ul = [], rl = []
-    for (let i = 0; i < max; i++) {
-      const u = us[i] || '', r = rs[i] || ''
-      if (u === r) { ul.push({ text: u || '(空)', type: 'match' }); rl.push({ text: r || '(空)', type: 'match' }) }
-      else { ul.push({ text: u || '(缺)', html: u ? highlightErrors(u, errs) : '', type: u ? 'diff' : 'missing' }); rl.push({ text: r || '(缺)', type: r ? 'diff' : 'missing' }) }
-    }
-    return { userLines: ul, refLines: rl }
+    return smartAlign(
+      splitSentences(rec.userTranslation),
+      splitSentences(this.currentEssay.originalEN || ''),
+      rec.errorSpans
+    )
   },
   // functions
   getRecord, scoreColor, formatTime,
@@ -3551,6 +3665,33 @@ onMounted(async () => {
   loadWordRoots()
   autoExportOnLoad()
   if (essays.value.length > 0 && !currentEssayId.value) currentEssayId.value = essays.value[0].id
+  // 恢复当前范文的译文草稿（解决切后台被杀后重载丢失问题）
+  if (currentEssayId.value && translationDrafts[currentEssayId.value]) {
+    userTranslation.value = translationDrafts[currentEssayId.value]
+    const saved = timerStates[currentEssayId.value]
+    if (saved) {
+      elapsed.value = saved.elapsed
+      practiceStarted.value = true
+      if (saved.running) {
+        timerInterval = setInterval(() => { elapsed.value++ }, 1000)
+      }
+    }
+  }
+  // 监听原生 App 前后台切换（钩入 Android onPause/onStop，比 visibilitychange 可靠）
+  try {
+    App.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) {
+        // 切后台 — 立即刷盘，不等 800ms debounce
+        flushSave()
+      }
+    })
+  } catch {
+    // 不在 Capacitor 环境中（浏览器调试），降级用 visibilitychange + pagehide
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushSave()
+    })
+    window.addEventListener('pagehide', () => flushSave())
+  }
 })
 </script>
 
