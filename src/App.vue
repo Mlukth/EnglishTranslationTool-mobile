@@ -708,13 +708,27 @@
           <span @click="showPhrasePracticeDialog = false; phraseRevealAnswer=false; phraseUserAnswer=''" style="font-size:18px;line-height:1">✕</span>
         </div>
         <div class="mob-fullscreen-body" v-if="phraseCards.length">
-          <!-- 卡片组选择 -->
-          <div class="mob-phrase-set-bar">
-            <el-select v-model="phraseSelectedSetId" size="small" placeholder="选择卡片组" style="flex:1" @change="selectPhraseSet(phraseSelectedSetId)">
-              <el-option v-for="set in phraseCards" :key="set.id" :label="set.title + ' (' + set.pairs.length + '对)'" :value="set.id" />
-            </el-select>
-            <span style="font-size:calc(9px*var(--ett-fs,1));color:#888">{{ phraseFilterReview ? '需复习' : '全部' }}</span>
-            <el-switch v-model="phraseFilterReview" size="small" style="margin-left:4px" />
+          <!-- 卡片组切换（标签栏） -->
+          <div class="mob-phrase-set-tabs">
+            <div v-for="set in phraseCards" :key="set.id"
+              class="mob-phrase-tab"
+              :class="{ active: phraseSelectedSetId === set.id }"
+              @click="selectPhraseSet(set.id)">
+              <span class="mob-phrase-tab-x" @click.stop="confirmDeletePhraseSet(set)">✕</span>
+              <span class="mob-phrase-tab-title">{{ set.title }}</span>
+              <span class="mob-phrase-tab-meta">{{ set.pairs.length }}对 · {{ getPhraseProgress(set) }}</span>
+            </div>
+          </div>
+          <!-- 删除确认条 -->
+          <div class="mob-phrase-delete-bar" v-if="phraseDeleteTarget">
+            <span class="mob-phrase-delete-msg">确定删除「{{ phraseDeleteTarget.title }}」（{{ phraseDeleteTarget.pairs.length }}对）？</span>
+            <el-button size="small" type="danger" @click="doDeletePhraseSet">确认删除</el-button>
+            <el-button size="small" @click="cancelDeletePhraseSet">取消</el-button>
+          </div>
+          <!-- 复习开关 -->
+          <div class="mob-phrase-filter-bar">
+            <span style="font-size:calc(10px*var(--ett-fs,1));color:#888">{{ phraseFilterReview ? '📝 需复习' : '📚 全部' }}</span>
+            <el-switch v-model="phraseFilterReview" size="small" />
           </div>
           <!-- 进度条 -->
           <div class="mob-phrase-progress" v-if="displayPhrasePairs.length">
@@ -982,6 +996,7 @@ const manualVocab = ref([])
 const customPrompts = ref([])
 // 反转短语卡片
 const phraseCards = ref([])
+const phraseDeleteTarget = ref(null) // 待删除的卡片组（内联确认用）
 const showPhrasePracticeDialog = ref(false)
 const phraseSelectedSetId = ref(null)
 const phraseCurrentIdx = ref(0)
@@ -1005,6 +1020,12 @@ function selectPhraseSet(id) {
   phraseUserAnswer.value = ''
   phraseRevealAnswer.value = false
 }
+// 打开弹窗时自动选中第一组（如果还没选）
+watch(showPhrasePracticeDialog, (v) => {
+  if (v && !phraseSelectedSetId.value && phraseCards.value.length) {
+    selectPhraseSet(phraseCards.value[0].id)
+  }
+})
 function getPhraseProgress(set) {
   const total = set.pairs.length
   const done = Object.keys(set.practiceState || {}).length
@@ -1050,6 +1071,18 @@ function phrasePrevCard() {
 }
 function phraseNextCard() {
   phraseAdvance()
+}
+function confirmDeletePhraseSet(set) {
+  phraseDeleteTarget.value = set
+}
+function cancelDeletePhraseSet() {
+  phraseDeleteTarget.value = null
+}
+function doDeletePhraseSet() {
+  if (phraseDeleteTarget.value) {
+    deletePhraseSet(phraseDeleteTarget.value.id)
+    phraseDeleteTarget.value = null
+  }
 }
 function deletePhraseSet(id) {
   phraseCards.value = phraseCards.value.filter(c => c.id !== id)
@@ -1113,7 +1146,7 @@ const currentAnnoCount = computed(() => {
 
   "segments": [
     {
-      "en": "【展示层】按语法意群切分的英文分句（确保语义完整，不要碎片化；若教辅编号有误请智能修正）",
+      "en": "【展示层】按意群切分英文。硬规则：严禁把一句完整句子拆成多段（不要按逗号或从句边界切碎）。但允许多句短话合并为一段（按含义/主题分组）。若教辅编号有误请智能修正。该段内全部考点都堆叠在keyPoints里。",
       "contextZH": "【展示层-简洁】该分句的简短中文翻译或结构提示（1句话，如'祈使句结构，以...开始'）",
       "keyPoints": ["【展示层-简洁】核心考点关键词1（短语形式，如'祈使句'）", "考点2（如'begin with短语'）", "考点3（如'for作连词表原因'）"],
       "raw_teaching_note": "【存储层-可选】从raw_text_archive复制该分句对应的教辅详细解析原文（包含易错点、例句对比、词义辨析等完整讲解）；若无详细解析则留空字符串''"
@@ -1127,7 +1160,7 @@ const currentAnnoCount = computed(() => {
 1. raw_text_archive 必须100%还原截图所有文字（含选择题、长篇解析、例句、编号笔误等），供后端存储/后续环节调用。
 
 【展示层-简洁为主】
-2. originalEN / segments.en：英文原文一字不易；segments按语法意群逻辑切分（通常3-4段），不要机械照抄教辅的碎片化编号。
+2. originalEN / segments.en：英文原文一字不易；segments按意群切分，硬规则是严禁把一句完整句子拆成多段（不要按逗号或从句边界切碎），但允许多句短话合并为一段（按含义/主题分组）。该段内全部考点都堆叠在keyPoints里。
 3. contextZH：简短中文翻译或结构提示，1句话以内，不要长篇大论。
 4. keyPoints：核心考点关键词，用短语形式（如'祈使句'、'for表原因'、'where引导不定式'），禁止复制教辅长篇解析。
 5. 若截图底部英文被截断，originalEN和segments.en必须根据完整句法逻辑自动补全，严禁输出残缺句。
@@ -1273,13 +1306,20 @@ function extractJSON(text) {
   try { return JSON.parse(text) } catch {}
   // Strip markdown fences + surrounding whitespace
   let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-  // Brace-depth matching (handles nested {})
-  const first = cleaned.indexOf('{')
-  if (first === -1) return null
+  // Try brace/array-depth matching (handles nested {} and [])
+  const firstBrace = cleaned.indexOf('{')
+  const firstBracket = cleaned.indexOf('[')
+  let first = -1
+  let isArray = false
+  if (firstBrace === -1 && firstBracket === -1) return null
+  if (firstBrace === -1) { first = firstBracket; isArray = true }
+  else if (firstBracket === -1) { first = firstBrace; isArray = false }
+  else { first = Math.min(firstBrace, firstBracket); isArray = first === firstBracket }
   let depth = 0
+  const open = isArray ? '[' : '{', close = isArray ? ']' : '}'
   for (let i = first; i < cleaned.length; i++) {
-    if (cleaned[i] === '{') depth++
-    else if (cleaned[i] === '}') { depth--; if (depth === 0) { cleaned = cleaned.slice(first, i + 1); break } }
+    if (cleaned[i] === open) depth++
+    else if (cleaned[i] === close) { depth--; if (depth === 0) { cleaned = cleaned.slice(first, i + 1); break } }
   }
   try { return JSON.parse(cleaned) } catch {}
   return null
@@ -1433,7 +1473,6 @@ function deleteEssay(id) {
 }
 
 // ========== 工具函数（补充） ==========
-const ANNO_STORAGE_KEY = 'ett_annotations'
 
 function sortEssays() {
   const orderMap = {}
@@ -1735,6 +1774,74 @@ function splitSentences(text) {
   return out
 }
 
+/** 将AI拆分过碎的segment合并回完整句子。
+ *  合并规则（按优先级）：
+ *  1. 不以句末标点（. ! ?）结尾 → 向后合并
+ *  2. 以小写字母或从句引导词（that/which/who...）开头 → 向前合并
+ *  3. ≤3词的短句 + 下一句是从句引导词 → 向后合并（AI 强加句号的碎片）
+ *  合并时拼接en、合并keyPoints（去重）、拼接contextZH和rawTeachingNote。 */
+function mergeSentenceFragments(segments) {
+  if (!segments || segments.length <= 1) return segments
+  const FRAGMENT_STARTERS = /^(that|which|who|whose|whom|where|when|what|whether|if|because|since|although|though|while|whereas|unless|until|after|before|as|so\s+that|in\s+order\s+that|such\s+that)\b/i
+
+  // 先跑一遍正向合并：不以 .!? 结尾的段向后合并
+  let pass1 = []
+  let buf = null
+  for (const seg of segments) {
+    if (!buf) {
+      buf = { ...seg, keyPoints: [...(seg.keyPoints || [])], contextZH: seg.contextZH || '', rawTeachingNote: seg.rawTeachingNote || '' }
+    } else {
+      buf.en = (buf.en + ' ' + (seg.en || '')).replace(/\s+/g, ' ').trim()
+      buf.keyPoints = [...new Set([...buf.keyPoints, ...(seg.keyPoints || [])])]
+      buf.contextZH = [buf.contextZH, seg.contextZH].filter(Boolean).join('；')
+      buf.rawTeachingNote = [buf.rawTeachingNote, seg.rawTeachingNote].filter(Boolean).join('\n')
+    }
+    if (/[.!?]['"」』]?\s*$/.test((seg.en || '').trim())) {
+      pass1.push(buf)
+      buf = null
+    }
+  }
+  if (buf) pass1.push(buf)
+  if (pass1.length <= 1) return pass1.length ? pass1 : segments
+
+  // 第二遍：回溯合并 —— 小写/从句开头向前合并，短句+从句向后合并
+  const result = []
+  let i = 0
+  while (i < pass1.length) {
+    let cur = { ...pass1[i], keyPoints: [...(pass1[i].keyPoints || [])], contextZH: pass1[i].contextZH || '', rawTeachingNote: pass1[i].rawTeachingNote || '' }
+    const curEn = (cur.en || '').trim()
+
+    // 规则2：当前段以小写/从句引导词开头 → 向前合并到 result 的最后一段
+    if (result.length && (/^[a-z]/.test(curEn) || FRAGMENT_STARTERS.test(curEn))) {
+      const prev = result[result.length - 1]
+      prev.en = (prev.en + ' ' + curEn).replace(/\s+/g, ' ').trim()
+      prev.keyPoints = [...new Set([...prev.keyPoints, ...(cur.keyPoints || [])])]
+      prev.contextZH = [prev.contextZH, cur.contextZH].filter(Boolean).join('；')
+      prev.rawTeachingNote = [prev.rawTeachingNote, cur.rawTeachingNote].filter(Boolean).join('\n')
+      i++
+      continue
+    }
+
+    // 规则3：当前段 ≤3 词，且下一段是从句引导词 → 向后合并下一段
+    const curWords = curEn.split(/\s+/).length
+    const next = pass1[i + 1]
+    const nextEn = next ? (next.en || '').trim() : ''
+    if (curWords <= 3 && next && FRAGMENT_STARTERS.test(nextEn)) {
+      cur.en = (cur.en + ' ' + next.en).replace(/\s+/g, ' ').trim()
+      cur.keyPoints = [...new Set([...cur.keyPoints, ...(next.keyPoints || [])])]
+      cur.contextZH = [cur.contextZH, next.contextZH].filter(Boolean).join('；')
+      cur.rawTeachingNote = [cur.rawTeachingNote, next.rawTeachingNote].filter(Boolean).join('\n')
+      i += 2
+      result.push(cur)
+      continue
+    }
+
+    result.push(cur)
+    i++
+  }
+  return result.length ? result : segments
+}
+
 /** 基于LCS最长公共子序列的贪心对齐：参考句找最相似的用户句（中文远优于字符集重叠率） */
 function smartAlign(userSentences, refSentences, errorSpans) {
   if (!refSentences.length) {
@@ -1859,7 +1966,8 @@ function syncData() {
         phraseCards: phraseCards.value,
         translationDrafts: Object.assign({}, translationDrafts),
         timerStates: Object.assign({}, timerStates),
-        exportVersion: 6
+        exportVersion: 6,
+        savedAt: Date.now()
       }
       localStorage.setItem('ett_backup', JSON.stringify(backup))
     } catch {}
@@ -1903,7 +2011,8 @@ async function flushSave() {
     phraseCards: phraseCards.value,
     translationDrafts: Object.assign({}, translationDrafts),
     timerStates: Object.assign({}, timerStates),
-    exportVersion: 6
+    exportVersion: 6,
+    savedAt: Date.now()
   }
   try { localStorage.setItem('ett_backup', JSON.stringify(backup)) } catch {}
   fileSaveBackup(backup) // Capacitor Filesystem backup (no await — fire and forget)
@@ -1916,16 +2025,30 @@ function syncFromServer() {
 }
 
 async function loadData() {
-  // 1. Try Capacitor Filesystem first (app private storage, survives cache clear)
-  const fileData = await fileRestoreBackup()
+  // 1. Read both sources
+  let fileData = await fileRestoreBackup()
+  let localData = null
+  try {
+    const raw = localStorage.getItem('ett_backup')
+    if (raw) localData = JSON.parse(raw)
+  } catch {}
+  // 2. Pick the newer one (compare savedAt timestamps)
+  const fileTime = fileData?.savedAt || 0
+  const localTime = localData?.savedAt || 0
+  if (fileData && localData) {
+    // Both exist — prefer newer. If Capacitor is stale, use localStorage.
+    if (localTime > fileTime) {
+      fileData = null // force fallback to localStorage
+    }
+  } else if (!fileData && localData) {
+    // Only localStorage has data
+  } else if (fileData && !localData) {
+    // Only Capacitor has data — use it
+  }
   if (fileData) {
     restoreBackupData(fileData)
-  } else {
-    // 2. Fall back to localStorage
-    try {
-      const raw = localStorage.getItem('ett_backup')
-      if (raw) restoreBackupData(JSON.parse(raw))
-    } catch {}
+  } else if (localData) {
+    restoreBackupData(localData)
   }
   if (essays.value.length === 0) {
     essays.value = BUILTIN_ESSAYS.map(e => ({ ...e, id: generateId() }))
@@ -2045,7 +2168,7 @@ const SEGMENT_PROMPT = `请将以下英文段落处理为考研英语一翻译�
 {
   "segments": [{"en":"原文分句1", "contextZH":"简短中文背景提示", "keyPoints":["考点1","考点2"]}]
 }
-每段segments的en为原文按句拆分。keyPoints标注每句涉及的语法考点（如定语从句、被动语态、倒装等）。
+每段segments的en为原文按意群切分。硬规则：严禁把一句完整英文句子拆成多段（不要按逗号或从句边界切碎）。但允许多句短话合并为一段（按含义/主题分组）。keyPoints标注该段涉及的全部语法考点（如定语从句、被动语态、倒装等），堆叠列出。
 
 英文原文：`
 
@@ -2567,7 +2690,7 @@ async function addEssay() {
       source: newEssay.source || '自定义',
       originalEN: newEssay.originalEN,
       referenceTranslation: newEssay.referenceTranslation || '',
-      segments: parsed.segments
+      segments: mergeSentenceFragments(parsed.segments)
     })
     ElMessage.success('范文添加成功')
     showAddDialog.value = false
@@ -2623,7 +2746,8 @@ function buildBackupJSON() {
     manualVocab: manualVocab.value,
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
-    exportVersion: 6
+    exportVersion: 6,
+    savedAt: Date.now()
   }
 }
 
@@ -2701,7 +2825,8 @@ function autoExportOnLoad() {
         essayOrder: essayOrder.value,
         manualVocab: manualVocab.value,
         phraseCards: phraseCards.value,
-        exportVersion: 6
+        exportVersion: 6,
+        savedAt: Date.now()
       }
     } catch {}
   }, 500)
@@ -2725,8 +2850,9 @@ function importData(file) {
       const data = JSON.parse(e.target.result)
       // 自动识别：如果顶层有 pairs 且元素含 en/zh → 当作单组短语卡片导入
       if (data.pairs && Array.isArray(data.pairs) && data.pairs.length && data.pairs[0].en !== undefined && data.pairs[0].zh !== undefined) {
+        const newId = generateId()
         phraseCards.value.push({
-          id: generateId(),
+          id: newId,
           title: data.title || 'JSON导入',
           source: data.source || '',
           date: data.date || new Date().toISOString().slice(0, 10),
@@ -2735,16 +2861,20 @@ function importData(file) {
           practiceState: {}
         })
         syncData()
+        selectPhraseSet(newId)
         ElMessage.success(`短语卡片导入成功：「${data.title || '未命名'}」(${data.pairs.length}对)`)
         return
       }
       // 如果顶层是数组且元素含 pairs → 当作多组短语卡片
       if (Array.isArray(data) && data.length && data[0].pairs && data[0].pairs[0]?.en !== undefined) {
         let imported = 0
+        let firstId = null
         for (const item of data) {
           if (!item.pairs?.length) continue
+          const newId = generateId()
+          if (!firstId) firstId = newId
           phraseCards.value.push({
-            id: generateId(),
+            id: newId,
             title: item.title || '批量导入',
             source: item.source || '',
             date: item.date || new Date().toISOString().slice(0, 10),
@@ -2755,20 +2885,40 @@ function importData(file) {
           imported += item.pairs.length
         }
         syncData()
-        ElMessage.success(`短语卡片批量导入：${data.length}组，共${imported}对`)
+        if (firstId) selectPhraseSet(firstId)
+        ElMessage.success(`短语卡片批量导入：${imported}对，共${data.filter(d => d.pairs?.length).length}组`)
         return
       }
-      if (data.essays) essays.value = data.essays
-      if (data.records) records.value = data.records
-      if (data.settings) Object.assign(settings, data.settings)
-      if (data.annotations) essayAnnotations.value = data.annotations
-      if (data.tokenUsage) tokenUsage.value = data.tokenUsage
-      if (data.essayOrder) essayOrder.value = data.essayOrder
-      if (data.waveCache) waveCache.value = data.waveCache
-      if (data.customPrompts) customPrompts.value = data.customPrompts
-      if (data.manualVocab) manualVocab.value = data.manualVocab
-      if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots) }
-      if (data.phraseCards) phraseCards.value = data.phraseCards
+      // 顶层是纯数组 [{en,zh}, {en,zh}] — 当作单组短语卡片（无 pairs 包装）
+      if (Array.isArray(data) && data.length && data[0].en !== undefined && data[0].zh !== undefined && !data[0].pairs) {
+        const newId = generateId()
+        phraseCards.value.push({
+          id: newId,
+          title: '短语导入',
+          source: '',
+          date: new Date().toISOString().slice(0, 10),
+          sourceNote: '',
+          pairs: data.map(p => ({ en: p.en, zh: p.zh })),
+          practiceState: {}
+        })
+        syncData()
+        selectPhraseSet(newId)
+        ElMessage.success(`短语卡片导入成功：${data.length}对（从纯数组识别）`)
+        return
+      }
+      // 下面为通用数据导入（完整备份/部分数据）
+      let importedSomething = false
+      if (data.essays) { essays.value = data.essays; importedSomething = true }
+      if (data.records) { records.value = data.records; importedSomething = true }
+      if (data.settings) { Object.assign(settings, data.settings); importedSomething = true }
+      if (data.annotations) { essayAnnotations.value = data.annotations; importedSomething = true }
+      if (data.tokenUsage) { tokenUsage.value = data.tokenUsage; importedSomething = true }
+      if (data.essayOrder) { essayOrder.value = data.essayOrder; importedSomething = true }
+      if (data.waveCache) { waveCache.value = data.waveCache; importedSomething = true }
+      if (data.customPrompts) { customPrompts.value = data.customPrompts; importedSomething = true }
+      if (data.manualVocab) { manualVocab.value = data.manualVocab; importedSomething = true }
+      if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots); importedSomething = true }
+      if (data.phraseCards) { phraseCards.value = data.phraseCards; importedSomething = true }
       if (data.promptConfig) {
         if (data.promptConfig.scoringPrompt) promptConfig.value.scoringPrompt = data.promptConfig.scoringPrompt
         if (data.promptConfig.segmentPrompt) promptConfig.value.segmentPrompt = data.promptConfig.segmentPrompt
@@ -2776,12 +2926,21 @@ function importData(file) {
         if (data.promptConfig.imageRefPrompt) promptConfig.value.imageRefPrompt = data.promptConfig.imageRefPrompt
         if (data.promptConfig.imagePhrasePrompt) promptConfig.value.imagePhrasePrompt = data.promptConfig.imagePhrasePrompt
         if (data.promptConfig.wavePrompt) promptConfig.value.wavePrompt = data.promptConfig.wavePrompt
+        importedSomething = true
       } else {
-        if (data.scoringPrompt) promptConfig.value.scoringPrompt = data.scoringPrompt
-        if (data.segmentPrompt) promptConfig.value.segmentPrompt = data.segmentPrompt
+        if (data.scoringPrompt) { promptConfig.value.scoringPrompt = data.scoringPrompt; importedSomething = true }
+        if (data.segmentPrompt) { promptConfig.value.segmentPrompt = data.segmentPrompt; importedSomething = true }
       }
       syncData()
-      ElMessage.success(`导入成功：${data.essays?.length || 0}篇范文，${data.records?.length || 0}条记录`)
+      if (importedSomething) {
+        const parts = []
+        if (data.essays?.length) parts.push(`${data.essays.length}篇范文`)
+        if (data.records?.length) parts.push(`${data.records.length}条记录`)
+        if (data.phraseCards?.length) parts.push(`${data.phraseCards.length}组短语卡片`)
+        ElMessage.success(`导入成功：${parts.length ? parts.join('，') : '数据已合并'}`)
+      } else {
+        ElMessage.warning('未识别到可导入的数据。请确认JSON格式：\n- 短语：{"pairs":[{"en":"...","zh":"..."}]}\n- 备份：{"essays":[...],"records":[...],...}')
+      }
     } catch (ex) { ElMessage.error('文件格式错误：' + ex.message) }
   }
   reader.readAsText(file)
@@ -3091,9 +3250,9 @@ function importFromImageJson() {
       source: parsed.source || '图片导入',
       originalEN: parsed.originalEN,
       referenceTranslation: parsed.referenceTranslation || '',
-      segments: (parsed.segments || [{ en: parsed.originalEN, contextZH: '', keyPoints: [] }]).map(seg => ({
+      segments: mergeSentenceFragments((parsed.segments || [{ en: parsed.originalEN, contextZH: '', keyPoints: [] }]).map(seg => ({
         ...seg, rawTeachingNote: seg.raw_teaching_note || ''
-      })),
+      }))),
       rawTextArchive: parsed.raw_text_archive || '',
       imageSource: parsed.sourceNote || ''
     })
@@ -3125,9 +3284,9 @@ function importBatchFromImageJson() {
         source: parsed.source || '图片导入',
         originalEN: parsed.originalEN,
         referenceTranslation: parsed.referenceTranslation || '',
-        segments: (parsed.segments || [{ en: parsed.originalEN, contextZH: '', keyPoints: [] }]).map(seg => ({
+        segments: mergeSentenceFragments((parsed.segments || [{ en: parsed.originalEN, contextZH: '', keyPoints: [] }]).map(seg => ({
           ...seg, rawTeachingNote: seg.raw_teaching_note || ''
-        })),
+        }))),
         rawTextArchive: parsed.raw_text_archive || '',
         imageSource: parsed.sourceNote || ''
       })
@@ -3151,11 +3310,34 @@ function importPhraseFromImageJson() {
     if (!parsed) throw new Error('未识别到JSON')
     // Support both single object and array
     let items = Array.isArray(parsed) ? parsed : [parsed]
+    // 检测是否为裸 [{en,zh}] 数组（AI 常直接返回这个格式）
+    if (items.length && items[0].en !== undefined && items[0].zh !== undefined && !items[0].pairs) {
+      const newId = generateId()
+      phraseCards.value.push({
+        id: newId,
+        title: '短语导入',
+        source: '图片导入',
+        date: new Date().toISOString().slice(0, 10),
+        sourceNote: '',
+        pairs: items.map(p => ({ en: p.en, zh: p.zh })),
+        practiceState: {}
+      })
+      flushSave()
+      selectPhraseSet(newId)
+      ElMessage.success(`短语导入成功：${items.length}对（从纯数组识别）`)
+      imageSlots.value = [{ url: '', blob: null }]
+      imageImportResult.value = ''
+      showImageImportDialog.value = false
+      return
+    }
     let imported = 0
+    let firstId = null
     for (const item of items) {
       if (!item.pairs?.length) continue
+      const newId = generateId()
+      if (!firstId) firstId = newId
       phraseCards.value.push({
-        id: generateId(),
+        id: newId,
         title: item.title || '短语导入',
         source: item.source || '图片导入',
         date: item.date || new Date().toISOString().slice(0, 10),
@@ -3165,7 +3347,12 @@ function importPhraseFromImageJson() {
       })
       imported += item.pairs.length
     }
+    if (imported === 0) {
+      ElMessage.warning('未识别到短语对。请确认AI返回格式：\n- 对象：{"pairs":[{"en":"...","zh":"..."}]}\n- 数组：[{"en":"...","zh":"..."}]')
+      return
+    }
     flushSave()
+    if (firstId) selectPhraseSet(firstId)
     ElMessage.success(`导入成功：${items.length}组，共 ${imported} 个短语对`)
     imageSlots.value = [{ url: '', blob: null }]
     imageImportResult.value = ''
@@ -3309,9 +3496,9 @@ function importAllBatch() {
         source: parsed.source || '图片导入',
         originalEN: parsed.originalEN,
         referenceTranslation: parsed.referenceTranslation || '',
-        segments: (parsed.segments || [{ en: parsed.originalEN, contextZH: '', keyPoints: [] }]).map(seg => ({
+        segments: mergeSentenceFragments((parsed.segments || [{ en: parsed.originalEN, contextZH: '', keyPoints: [] }]).map(seg => ({
           ...seg, rawTeachingNote: seg.raw_teaching_note || ''
-        })),
+        }))),
         rawTextArchive: parsed.raw_text_archive || '',
         imageSource: parsed.sourceNote || ''
       })
@@ -3328,17 +3515,6 @@ function importAllBatch() {
 }
 
 // ========== 批注系统 ==========
-function loadAnnotations() {
-  try {
-    const raw = localStorage.getItem(ANNO_STORAGE_KEY)
-    if (raw) essayAnnotations.value = JSON.parse(raw)
-  } catch { essayAnnotations.value = {} }
-}
-
-function saveAnnotations() {
-  localStorage.setItem(ANNO_STORAGE_KEY, JSON.stringify(essayAnnotations.value))
-}
-
 function toggleAnnoMode() {
   annoMode.value = !annoMode.value
   if (annoMode.value) {
@@ -3425,7 +3601,7 @@ function getCurrentAnno() {
 function setCurrentAnno(anns) {
   if (currentEssayId.value) {
     essayAnnotations.value[currentEssayId.value] = anns
-    saveAnnotations()
+    syncData() // 统一走 ett_backup，不再单独写 ett_annotations
   }
 }
 
@@ -4374,8 +4550,41 @@ html.ett-dark .el-drawer__body { color: #c1c1c1; }
 .mob-fullscreen-hdr { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #1e1e1e; flex-shrink: 0; color: #888; font-size: 14px; cursor: pointer; }
 .mob-fullscreen-title { font-size: 15px; font-weight: 700; color: #f8fafc; cursor: default; }
 .mob-fullscreen-body { flex: 1; overflow-y: auto; padding: 14px; }
-.mob-phrase-set-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.mob-phrase-set-bar .el-select { max-width: 65%; }
+/* 短语组标签栏 — 横向滚动 */
+.mob-phrase-set-tabs {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px;
+  margin-bottom: 10px; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mob-phrase-set-tabs::-webkit-scrollbar { display: none; }
+.mob-phrase-tab {
+  flex-shrink: 0; min-width: 100px; padding: 10px 14px;
+  background: #161616; border: 1.5px solid #252525; border-radius: 10px;
+  cursor: pointer; transition: all .18s; text-align: center;
+  position: relative;
+}
+.mob-phrase-tab-x {
+  position: absolute; top: 4px; right: 6px;
+  font-size: 13px; color: #555; line-height: 1; padding: 2px 4px;
+  border-radius: 4px; transition: color .15s;
+}
+.mob-phrase-tab-x:hover { color: #ef4444; background: rgba(239,68,68,.12); }
+.mob-phrase-tab.active {
+  background: #1a3a5c; border-color: #409EFF; box-shadow: 0 0 8px rgba(64,158,255,.25);
+}
+.mob-phrase-tab-title { display: block; font-size: 13px; font-weight: 600; color: #ccc; white-space: nowrap; }
+.mob-phrase-tab.active .mob-phrase-tab-title { color: #fff; }
+.mob-phrase-tab-meta { display: block; font-size: 10px; color: #777; margin-top: 3px; white-space: nowrap; }
+.mob-phrase-tab.active .mob-phrase-tab-meta { color: #8cb8e8; }
+/* 删除确认条 */
+.mob-phrase-delete-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: 10px; border-radius: 8px;
+  background: #2a1215; border: 1px solid #5c1a1a;
+}
+.mob-phrase-delete-msg { flex: 1; min-width: 0; font-size: 12px; color: #f87171; word-break: break-all; }
+/* 复习开关 */
+.mob-phrase-filter-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
 .mob-phrase-progress { display: flex; align-items: center; margin-bottom: 14px; }
 .mob-phrase-card { background: #1a1a1a; border-radius: 14px; padding: 18px; margin-bottom: 12px; }
 .mob-phrase-zh { font-size: 15px; color: #e0e0e0; text-align: center; margin-bottom: 14px; font-weight: 600; }

@@ -11,7 +11,10 @@ set -e
 TIMESTAMP=$(date +%Y%m%d-%H%M)
 PROJECT_DIR="D:/photovoltaic/EnglishTranslationTool-mobile"
 
-echo "=== 1/4 update version ==="
+echo "=== 1/5 npm build ==="
+npm run build
+
+echo "=== 2/5 update version ==="
 cd "$PROJECT_DIR"
 node -e "
 const p=require('./package.json');
@@ -21,14 +24,14 @@ require('fs').writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n');
 console.log('version ->', p.version);
 "
 
-echo "=== 2/4 cap sync ==="
+echo "=== 3/5 cap sync ==="
 npx cap sync android
 
-echo "=== 3/4 gradle build ==="
+echo "=== 4/5 gradle build ==="
 cd android
 ./gradlew assembleDebug
 
-echo "=== 4/4 rename APK ==="
+echo "=== 5/5 rename APK ==="
 APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
 APK_DST="app/build/outputs/apk/debug/ett-v${TIMESTAMP}.apk"
 cp "$APK_SRC" "$APK_DST"

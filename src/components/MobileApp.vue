@@ -38,23 +38,24 @@
 
     <!-- Tab 2: 练习 -->
     <div v-if="activeTab === 'practice'" class="mobile-tab">
-      <div class="mob-header">
-        <span style="font-size:calc(11px * var(--ett-fs, 1));color:#888" @click="activeTab='essays'">← 范文库</span>
-        <span class="mob-title">{{ $.currentEssay ? $.currentEssay.title : '翻译练习' }}</span>
-        <span style="font-size:calc(10px * var(--ett-fs, 1));color:#409eff" @click="$.showPromptConfig=true">⚙ 提示词</span>
-      </div>
-      <div class="mob-mode-pills">
-        <span v-for="m in [{k:'api',l:'API评分'},{k:'window',l:'窗口AI'},{k:'wave',l:'水波'},{k:'reverse',l:'反转'}]" :key="m.k"
-          class="mob-pill" :class="{ active: $.scoringMode === m.k }" @click="$.scoringMode = m.k">{{ m.l }}</span>
-      </div>
-      <div class="mob-practice-scroll" v-if="$.currentEssay">
-        <!-- 原文（水波模式隐藏——水波有自己的句子列表） -->
-        <template v-if="$.scoringMode !== 'wave'">
-          <div class="mob-src-bar" @click="mobSrcShow = !mobSrcShow">
-            <span style="font-size:calc(10px * var(--ett-fs, 1));color:#aaa">📄 原文 · {{ $.currentEssay.source }} {{ mobSrcShow ? '▾' : '▸' }}</span>
+      <!-- ═══ 吸顶区：标题 + 模式 + 原文（展开时）═══ -->
+      <div class="mob-practice-head">
+        <div class="mob-header">
+          <span style="font-size:calc(11px * var(--ett-fs, 1));color:#888" @click="activeTab='essays'">← 范文库</span>
+          <span class="mob-title">{{ $.currentEssay ? $.currentEssay.title : '翻译练习' }}</span>
+          <span style="font-size:calc(10px * var(--ett-fs, 1));color:#409eff" @click="$.showPromptConfig=true">⚙ 提示词</span>
+        </div>
+        <div class="mob-mode-pills">
+          <span v-for="m in [{k:'api',l:'API评分'},{k:'window',l:'窗口AI'},{k:'wave',l:'水波'},{k:'reverse',l:'反转'}]" :key="m.k"
+            class="mob-pill" :class="{ active: $.scoringMode === m.k }" @click="$.scoringMode = m.k">{{ m.l }}</span>
+        </div>
+        <!-- 原文展开条（收起时不占位） -->
+        <template v-if="$.scoringMode !== 'wave' && $.currentEssay && mobSrcShow">
+          <div class="mob-src-bar mob-src-bar-open" @click="mobSrcShow = false">
+            <span style="font-size:calc(10px * var(--ett-fs, 1));color:#aaa">📄 原文 · {{ $.currentEssay.source }} ▾ 点击收起</span>
             <span class="mob-src-count">{{ $.currentEssay.segments.length }}段</span>
           </div>
-          <div v-if="mobSrcShow" class="mob-src-body">
+          <div class="mob-src-body-expanded">
             <div class="mob-src-scroll" ref="srcScrollRef">
               <div v-for="(seg, i) in $.currentEssay.segments" :key="i" class="mob-seg"
                 :class="{ sel: mobSeg === i }" @click="mobSeg = i">
@@ -72,6 +73,15 @@
             </div>
           </div>
         </template>
+      </div>
+
+      <!-- ═══ 主内容区 ═══ -->
+      <div v-if="$.currentEssay" class="mob-practice-body">
+        <!-- 原文折叠条（收起时在内容流里） -->
+        <div v-if="$.scoringMode !== 'wave' && !mobSrcShow" class="mob-src-bar" @click="mobSrcShow = true">
+          <span style="font-size:calc(10px * var(--ett-fs, 1));color:#aaa">📄 原文 · {{ $.currentEssay.source }} ▸ 点击展开</span>
+          <span class="mob-src-count">{{ $.currentEssay.segments.length }}段</span>
+        </div>
         <!-- 翻译输入 -->
         <div class="mob-section-label">✏️ 你的译文 <span style="color:#888;font-weight:400">⏱ {{ $.formatTime($.elapsed) }}</span></div>
         <textarea v-if="$.scoringMode !== 'wave'" class="mob-textarea" v-model="$.userTranslation" placeholder="在此输入你的中文翻译..."></textarea>
@@ -421,9 +431,26 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
   flex: 1; display: flex; flex-direction: column; overflow-y: auto;
 }
 
-.mob-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 14px 8px; flex-shrink: 0;
+/* ═══ 吸顶头：标题 + 模式 + 原文(展开时) stuck to top ═══ */
+.mob-practice-head {
+  position: -webkit-sticky;
+  position: sticky; top: 0; z-index: 60;
+  background: #1a1a2e;
+  flex-shrink: 0;
+}
+
+/* 原文展开区（在 sticky head 内部，限高防占满屏） */
+.mob-src-body-expanded {
+  max-height: 40vh;
+  overflow-y: auto;
+  background: #1e1e30;
+  border-bottom: 1px solid #2d2d3f;
+}
+
+/* 展开状态下的原文条 */
+.mob-src-bar-open {
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
 }
 .mob-title { font-size: calc(16px * var(--ett-fs, 1)); font-weight: 700; color: #fff; }
 .mob-count { font-size: calc(10px * var(--ett-fs, 1)); color: #888; background: #374151; padding: 2px 8px; border-radius: 10px; }
@@ -465,7 +492,7 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 /* 原文区（对齐练习页方案A设计） */
 .mob-src-bar { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: #2d2d3f; border-radius: 8px; cursor: pointer; margin-bottom: 4px; }
 .mob-src-count { font-size: calc(9px * var(--ett-fs, 1)); color: #666; background: #374151; padding: 2px 6px; border-radius: 8px; }
-.mob-src-body { background: #1e1e30; border-radius: 8px; padding: 0; margin-bottom: 4px; overflow: hidden; }
+/* .mob-src-body 已被 mob-src-sticky 替代 */
 .mob-src-scroll { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 0; padding: 6px 0; }
 .mob-src-scroll::-webkit-scrollbar { height: 0; }
 .mob-seg { min-width: 100%; max-width: 100%; scroll-snap-align: start; padding: 8px 10px; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
