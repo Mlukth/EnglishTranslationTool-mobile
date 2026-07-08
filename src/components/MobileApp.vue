@@ -502,44 +502,55 @@ let toolbarDragging = false
 let toolbarStartX = 0, toolbarStartY = 0
 let toolbarOrigX = 0, toolbarOrigY = 0
 
-// 悬浮入口按钮：拖拽 + 自动半收起
+// ══════════════════════════════════════════
+// 悬浮球定位系统（纯 transform 方案 — 杜绝 left/right 冲突导致拉伸）
+// CSS 锚点 right:12 bottom:64 → 左上角 = (W-56, H-108)
+// mobEntryPos {x,y} = 相对锚点的偏移量(px)，正=右/下，负=左/上
+// ══════════════════════════════════════════
 const mobEntryRef = ref(null)
 const mobEntryCollapsed = ref(false)
-const mobEntryPos = ref({ x: 0, y: 0 })  // 用户拖拽的当前位置
+const mobEntryPos = ref({ x: 0, y: 0 })
 let entryDragging = false
 let entryStartX = 0, entryStartY = 0
-let entryOrigX = 0, entryOrigY = 0
+let entryBaseX = 0, entryBaseY = 0
 let entryCollapseTimer = null
-let entryHasMoved = false  // 本次触摸是否产生了位移（区分拖拽和点击）
+let entryHasMoved = false
 
-// 读取持久化的悬浮球位置
+function entryAnchorX() { return window.innerWidth - 12 - 44 }
+function entryAnchorY() { return window.innerHeight - 64 - 44 }
+
+// 读取持久化位置（兼容旧绝对坐标 → 转为相对锚点偏移）
 try {
   const saved = localStorage.getItem('ett_entry_pos')
   if (saved) {
     const p = JSON.parse(saved)
-    mobEntryPos.value = { x: p.x, y: p.y }
+    if (p._v2) {
+      mobEntryPos.value = { x: p.x || 0, y: p.y || 0 }
+    } else if (p.x || p.y) {
+      const ax = entryAnchorX(), ay = entryAnchorY()
+      mobEntryPos.value = { x: (p.x || ax) - ax, y: (p.y || ay) - ay }
+    }
   }
 } catch {}
 
 const mobEntryStyle = computed(() => {
   const pos = mobEntryPos.value
-  const style = {}
-  // 使用用户拖拽的位置
-  if (pos.x || pos.y) {
-    style.left = pos.x + 'px'
-    style.top = pos.y + 'px'
-  }
-  // 收起状态：用 transform 滑出半边，不改变 left/top 定位
+  let tx = pos.x
+  let ty = pos.y
+
   if (mobEntryCollapsed.value) {
-    const cx = pos.x || (window.innerWidth - 52)  // 无保存位置时默认右下
-    const halfW = window.innerWidth / 2
-    style.transform = cx < halfW ? 'translateX(-28px)' : 'translateX(28px)'
-    style.opacity = '0.35'
-  } else {
-    style.transform = 'translateX(0)'
-    style.opacity = '1'
+    const visualX = entryAnchorX() + tx
+    tx += (visualX < window.innerWidth / 2) ? -28 : 28
   }
-  return style
+
+  return {
+    transform: `translate(${Math.round(tx)}px, ${Math.round(ty)}px)`,
+    opacity: mobEntryCollapsed.value ? 0.35 : 1,
+    width: '44px',
+    height: '44px',
+    minWidth: '44px',
+    maxWidth: '44px',
+  }
 })
 
 const mobDrawColors = [
@@ -742,62 +753,68 @@ function onToolbarDragEnd() {
   toolbarDragging = false
 }
 
-// 悬浮入口按钮：拖拽（参照 iOS AssistiveTouch — 拖时自由，松手2秒后轻靠边）
+// 悬浮球拖拽（纯 transform 方案 — 无 left/right 冲突）
 function onEntryDragStart(e) {
-  // ❗ 不在这里 preventDefault——会让移动端 click 事件无法合成
   if (!e.touches || !e.touches.length) return
   entryDragging = true
   entryHasMoved = false
   entryStartX = e.touches[0].clientX
   entryStartY = e.touches[0].clientY
-  const el = mobEntryRef.value
-  if (!el) return
-  // 拖拽时关闭 CSS transition，保证1:1跟手
-  el.style.transition = 'none'
-  // 如果当前是半收起状态，先展开到手指位置
+
+  // 记录拖拽起点偏移量
+  entryBaseX = mobEntryPos.value.x
+  entryBaseY = mobEntryPos.value.y
+
+  // 收起状态 → 展开到手指位置，补偿收起偏移量避免跳变
   if (mobEntryCollapsed.value) {
     mobEntryCollapsed.value = false
-    const rect = el.getBoundingClientRect()
-    mobEntryPos.value = { x: Math.max(0, Math.min(window.innerWidth - 44, rect.left)), y: rect.top }
+    const visualX = entryAnchorX() + entryBaseX
+    // 收起时 mEntryStyle 给 transform 加了 ±28，展开后需同步到 pos 里
+    entryBaseX += (visualX < window.innerWidth / 2) ? -28 : 28
+    entryBaseY = mobEntryPos.value.y  // y 方向不变
+    // 立即同步 pos，让 Vue 渲染与拖拽基准一致
+    mobEntryPos.value = { x: entryBaseX, y: entryBaseY }
   }
+
   clearEntryCollapseTimer()
-  const rect = el.getBoundingClientRect()
-  entryOrigX = rect.left
-  entryOrigY = rect.top
 }
 
 function onEntryDragMove(e) {
   if (!entryDragging || !e.touches || !e.touches.length) return
   const dx = e.touches[0].clientX - entryStartX
   const dy = e.touches[0].clientY - entryStartY
-  // 超过 5px 才确认是拖拽（给 tap 留余地）
+
   if (!entryHasMoved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return
   if (!entryHasMoved) {
     entryHasMoved = true
-    e.preventDefault()  // 确认拖拽后才阻止默认行为（阻止页面滚动）
+    e.preventDefault()
+    // 确认拖拽后才关 transition
+    const el = mobEntryRef.value
+    if (el) el.style.transition = 'none'
   }
-  // 自由跟手，不吸边 — Apple AssistiveTouch 松手后才靠边
-  const newLeft = Math.max(0, Math.min(window.innerWidth - 44, entryOrigX + dx))
-  const newTop = Math.max(0, Math.min(window.innerHeight - 44, entryOrigY + dy))
-  mobEntryPos.value = { x: newLeft, y: newTop }
-  const el = mobEntryRef.value
-  if (el) { el.style.left = newLeft + 'px'; el.style.top = newTop + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto' }
+
+  mobEntryPos.value = {
+    x: entryBaseX + dx,
+    y: entryBaseY + dy,
+  }
 }
 
 function onEntryDragEnd(e) {
   entryDragging = false
   if (!entryHasMoved) {
-    // 是 tap，恢复 transition
-    const el = mobEntryRef.value
-    if (el) el.style.transition = ''
-    return
+    return // tap，啥也不做
   }
-  // 保存位置
-  try { localStorage.setItem('ett_entry_pos', JSON.stringify(mobEntryPos.value)) } catch {}
-  // 恢复 CSS transition，以便后续收起动画能平滑过渡
+  // 保存位置（_v2 格式）
+  try {
+    localStorage.setItem('ett_entry_pos', JSON.stringify({
+      _v2: true,
+      x: mobEntryPos.value.x,
+      y: mobEntryPos.value.y,
+    }))
+  } catch {}
+  // 恢复 transition
   const el = mobEntryRef.value
   if (el) el.style.transition = ''
-  // 2秒后轻柔靠边收起
   startEntryCollapseTimer()
 }
 
@@ -805,28 +822,24 @@ function onEntryClick(e) {
   if (entryHasMoved) return
   mobEntryCollapsed.value = false
   clearEntryCollapseTimer()
-  // 先进入批注模式，等工具栏渲染后再定位
   mobAnnoMode.value = true
   nextTick(() => positionToolbarNearEntry())
 }
 
-// 智能定位工具栏：根据悬浮球在屏幕的哪一侧，把工具栏放到同侧
+// 工具栏智能定位（用视觉坐标 = 锚点 + 偏移量）
 function positionToolbarNearEntry() {
   const el = mobToolbarRef.value
   if (!el) return
-  const pos = mobEntryPos.value
-  const cx = pos.x || (window.innerWidth - 52)
+  const visualX = entryAnchorX() + mobEntryPos.value.x
+  const visualY = entryAnchorY() + mobEntryPos.value.y
   const halfW = window.innerWidth / 2
-  // 水平：球在左半屏 → 工具栏靠左展开；球在右半屏 → 工具栏靠右展开
-  if (cx < halfW) {
+  if (visualX < halfW) {
     el.style.left = '8px'; el.style.right = 'auto'
   } else {
     el.style.left = 'auto'; el.style.right = '8px'
   }
-  // 垂直：贴近球的高度，限制不超出屏幕
-  const ballY = pos.y || (window.innerHeight * 0.6)
   const toolbarH = el.offsetHeight || 220
-  const topY = Math.max(40, Math.min(window.innerHeight - toolbarH - 60, ballY - 40))
+  const topY = Math.max(40, Math.min(window.innerHeight - toolbarH - 60, visualY - 40))
   el.style.top = topY + 'px'
 }
 
@@ -1072,14 +1085,15 @@ watch(() => $.currentEssayId, () => {
 
 .mob-anno-entry {
   position: fixed; bottom: 64px; right: 12px; z-index: 150;
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 44px; height: 44px; min-width: 44px; max-width: 44px;
+  border-radius: 50%;
   background: #409eff; color: #fff; font-size: 20px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 12px rgba(64,158,255,0.4);
   -webkit-tap-highlight-color: transparent;
   user-select: none; -webkit-user-select: none;
   touch-action: none;
-  /* transform + opacity 做收起/展开的柔性动画；拖拽时 JS 关掉 transition */
+  will-change: transform, opacity;
   transition: transform 0.35s cubic-bezier(0.25, 0.8, 0.25, 1.2), opacity 0.35s ease;
 }
 
