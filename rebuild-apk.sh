@@ -9,6 +9,7 @@ export GRADLE_USER_HOME="D:/gradle-cache"
 set -e
 
 TIMESTAMP=$(date +%Y%m%d-%H%M)
+VERSIONCODE=1$(date +%m%d%H%M)  # 1MMDDHHmm，1开头避免Groovy八进制解析，最大112312359
 PROJECT_DIR="D:/photovoltaic/EnglishTranslationTool-mobile"
 
 echo "=== 1/5 npm build ==="
@@ -18,11 +19,13 @@ echo "=== 2/5 update version ==="
 cd "$PROJECT_DIR"
 node -e "
 const p=require('./package.json');
-const ts='${TIMESTAMP}';
-p.version='1.0.'+ts;
+p.version='1.0.${TIMESTAMP}';
 require('fs').writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n');
 console.log('version ->', p.version);
 "
+# 更新 Android versionCode（必须递增，否则覆盖安装失败）
+sed -i "s/versionCode [0-9]*/versionCode ${VERSIONCODE}/" android/app/build.gradle
+echo "versionCode -> ${VERSIONCODE}"
 
 echo "=== 3/5 cap sync ==="
 npx cap sync android

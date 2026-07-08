@@ -60,6 +60,14 @@ public/
 rebuild-apk.sh                  # 一键重打包脚本
 ```
 
+## 文档索引
+
+| 文档 | 内容 |
+|------|------|
+| [APK封装流程.md](./APK封装流程.md) | Capacitor 初始化、Gradle 构建、JDK/SDK 环境、踩坑记录 |
+| [PC移植Mobile经验.md](./PC移植Mobile经验.md) | 双布局架构、触摸适配、批注系统、弹窗二分法、移植 checklist |
+| [TECHNICAL_PLAN_v2.0.md](./TECHNICAL_PLAN_v2.0.md) | v2.0 技术方案 |
+
 ## 技术栈
 
 | 层 | 技术 |

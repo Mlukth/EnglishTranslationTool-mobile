@@ -156,7 +156,7 @@
               <div class="wave-answer-header">
                 <span class="wave-answer-title">📝 第{{ waveSelectedIdx + 1 }}句分析</span>
               </div>
-              <div class="wave-answer-content" v-if="waveAnswer.grammarTree">
+              <div class="wave-answer-content" v-if="waveAnswer.grammarTree" @click="onWordClick">
                 <div class="wave-tree-section">
                   <div class="wave-tree-label">语法结构</div>
                   <div class="wave-tree-text">{{ waveAnswer.grammarTree }}</div>
@@ -178,7 +178,7 @@
                   <div class="wave-tree-text analogy">{{ waveAnswer.analogy }}</div>
                 </div>
               </div>
-              <div class="wave-answer-content" v-else-if="waveAnswer.raw">
+              <div class="wave-answer-content" v-else-if="waveAnswer.raw" @click="onWordClick">
                 <pre class="wave-raw">{{ waveAnswer.raw }}</pre>
               </div>
             </div>
@@ -263,12 +263,12 @@
               <span class="section-label">译文对照（反转）</span>
             </div>
             <div class="compare-view">
-              <div class="compare-col yours">
+              <div class="compare-col yours" @click="onWordClick">
                 <div class="compare-col-title">你的英译</div>
                 <p v-for="(line, i) in reverseDiffResult.userLines" :key="i"
                   :class="line.type"><span v-if="line.html" v-html="line.html" /><span v-else>{{ line.text }}</span></p>
               </div>
-              <div class="compare-col ref">
+              <div class="compare-col ref" @click="onWordClick">
                 <div class="compare-col-title">英文原文</div>
                 <p v-for="(line, i) in reverseDiffResult.refLines" :key="i"
                   :class="line.type">{{ line.text }}</p>
@@ -313,12 +313,12 @@
               <span class="section-label">译文对照</span>
             </div>
             <div class="compare-view">
-              <div class="compare-col yours">
+              <div class="compare-col yours" @click="onWordClick">
                 <div class="compare-col-title">你的译文</div>
                 <p v-for="(line, i) in diffResult.userLines" :key="i"
                   :class="line.type"><span v-if="line.html" v-html="line.html" /><span v-else>{{ line.text }}</span></p>
               </div>
-              <div class="compare-col ref">
+              <div class="compare-col ref" @click="onWordClick">
                 <div class="compare-col-title">参考译文</div>
                 <p v-for="(line, i) in diffResult.refLines" :key="i"
                   :class="line.type">{{ line.text }}</p>
@@ -358,7 +358,7 @@
           </div>
           <div class="feedback-card">
             <div class="feedback-title">AI 点评</div>
-            <div class="feedback-content" v-html="renderedFeedback"></div>
+            <div class="feedback-content" v-html="renderedFeedback" @click="onWordClick"></div>
             <div v-if="bilibiliMatches.length" class="bilibili-links">
               <div class="bilibili-title">相关知识点视频：</div>
               <a v-for="link in bilibiliMatches" :key="link.bvid"
@@ -379,10 +379,13 @@
           <!-- 错误结构分析（水波纠错） -->
           <div v-if="normalizeMistakeWaves(rightPanelRecord).length">
             <div class="feedback-title">🌊 错误结构分析（{{ normalizeMistakeWaves(rightPanelRecord).length }}处）</div>
-            <div v-for="(mw, wi) in normalizeMistakeWaves(rightPanelRecord)" :key="'mw'+wi" class="mw-card">
+            <div v-for="(mw, wi) in normalizeMistakeWaves(rightPanelRecord)" :key="'mw'+wi" class="mw-card" @click="onWordClick">
               <div class="mw-card-header">
                 <span v-if="mw.sentenceIndex !== null" class="mw-sentence-tag">第{{ mw.sentenceIndex + 1 }}句</span>
                 <span class="mw-error-tag">{{ mw.errorType || '结构性错误' }}</span>
+                <span v-if="mw.patternEN" class="mw-star-btn" @click.stop="toggleStarItem(mw.patternEN)" :title="isStarred(mw.patternEN) ? '取消星标' : '星标此结构'">
+                  {{ isStarred(mw.patternEN) ? '⭐' : '☆' }}
+                </span>
               </div>
               <div class="mw-block" v-if="mw.studentError">
                 <div class="mw-label">学生错译</div>
@@ -415,7 +418,10 @@
           <div v-if="rightPanelRecord?.translationErrors?.length">
             <div class="feedback-title">📋 翻译错误对照</div>
             <div class="te-table">
-              <div v-for="(te, i) in rightPanelRecord.translationErrors" :key="'te'+i" class="te-row">
+              <div v-for="(te, i) in rightPanelRecord.translationErrors" :key="'te'+i" class="te-row" @click="onWordClick">
+                <div class="te-cell te-star" @click.stop="toggleStarItem(scoringMode === 'reverse' ? (te.correctEN || te.originalEN) : te.originalEN)" :title="isStarred(scoringMode === 'reverse' ? (te.correctEN || te.originalEN) : te.originalEN) ? '取消星标' : '星标关键错误'">
+                  {{ isStarred(scoringMode === 'reverse' ? (te.correctEN || te.originalEN) : te.originalEN) ? '⭐' : '☆' }}
+                </div>
                 <div class="te-cell te-orig">{{ te.originalEN }}</div>
                 <div class="te-cell te-correct">{{ scoringMode === 'reverse' ? (te.correctEN || '') : (te.correctZH || '') }}</div>
                 <div class="te-cell te-wrong">{{ scoringMode === 'reverse' ? (te.studentEN || '') : (te.studentZH || '') }}</div>
@@ -431,8 +437,9 @@
               <span style="font-size:12px;color:#999">{{ showVocabPool ? '收起' : '展开' }}</span>
             </div>
             <div v-if="showVocabPool" class="vocab-list">
-              <div v-for="item in vocabPool.slice(0, 20)" :key="item.item" class="vocab-item">
+              <div v-for="item in vocabPoolTop20" :key="item.item" class="vocab-item" @click="onWordClick">
                 <div class="vocab-word">
+                  <span class="vocab-star" @click.stop="toggleStarItem(item.item)" :title="isStarred(item.item) ? '取消星标' : '星标'">{{ isStarred(item.item) ? '⭐' : '☆' }}</span>
                   <span class="vocab-text">{{ item.item }}</span>
                   <el-tag size="small" :type="item.level === '考研' ? 'warning' : item.level === '六级' ? 'primary' : 'info'">{{ item.level }}</el-tag>
                   <el-tag size="small" type="success" v-if="item.category">{{ item.category }}</el-tag>
@@ -516,7 +523,7 @@
             <div class="history-label">你的译文：</div>
             <p>{{ rec.userTranslation?.slice(0, 200) }}{{ rec.userTranslation?.length > 200 ? '...' : '' }}</p>
           </div>
-          <div class="history-feedback" v-if="rec.feedback">
+          <div class="history-feedback" v-if="rec.feedback" @click="onWordClick">
             <div class="history-label">点评：</div>
             <p v-html="rec.feedback.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').slice(0, 300)"></p>
           </div>
@@ -569,16 +576,21 @@
           <el-option label="超纲" value="超纲" />
         </el-select>
         <span style="font-size:12px;color:#777;white-space:nowrap">共 {{ filteredVocabPool.length }} 词</span>
+        <el-button size="small" :type="vocabStarFilter ? 'warning' : 'default'" @click="vocabStarFilter = !vocabStarFilter" style="margin-left:4px">{{ vocabStarFilter ? '⭐ 已星标' : '☆ 全部' }}</el-button>
       </div>
       <div class="vocab-pool-full-list">
-        <div v-for="item in filteredVocabPool" :key="item.item" class="vocab-item">
+        <div v-for="item in displayedVocabPool" :key="item.item" class="vocab-item" @click="onWordClick">
           <div class="vocab-word">
+            <span class="vocab-star" @click.stop="toggleStarItem(item.item)" :title="isStarred(item.item) ? '取消星标' : '星标'">{{ isStarred(item.item) ? '⭐' : '☆' }}</span>
             <span class="vocab-text">{{ item.item }}</span>
             <el-tag size="small" :type="item.level === '考研' ? 'warning' : item.level === '六级' ? 'primary' : 'info'">{{ item.level }}</el-tag>
             <el-tag size="small" type="success" v-if="item.category">{{ item.category }}</el-tag>
           </div>
           <div class="vocab-meaning">{{ item.meaning }}</div>
           <div class="vocab-meta">出现 {{ item.count }} 次 · {{ item.dateCount }} 天</div>
+        </div>
+        <div v-if="hasMoreVocab" style="text-align:center;padding:8px">
+          <el-button size="small" text type="primary" @click="loadMoreVocab">加载更多 ({{ filteredVocabPool.length - vocabDisplayLimit }} 项剩余)</el-button>
         </div>
         <el-empty v-if="filteredVocabPool.length === 0 && vocabPool.length > 0" description="无匹配结果" :image-size="60" />
         <el-empty v-if="vocabPool.length === 0" description="暂无生词数据，完成评分后自动累积" :image-size="60" />
@@ -738,6 +750,10 @@
           <!-- 练习卡片 -->
           <div v-if="displayPhrasePairs.length" class="mob-phrase-card" :class="{ revealed: phraseRevealAnswer }">
             <div class="mob-phrase-zh">{{ displayPhrasePairs[phraseCurrentIdx]?.zh }}</div>
+            <div v-if="isWordListPhrase" class="mob-phrase-wordmap" @click="onWordClick">
+              <span class="mob-phrase-wordmap-label">📝 待掌握词汇：</span>
+              <span v-for="(w, wi) in phraseWordItems" :key="wi" class="mob-phrase-wordmap-item">{{ w }}<span v-if="wi < phraseWordItems.length - 1" style="color:#555"> · </span></span>
+            </div>
             <div class="mob-phrase-input-area">
               <div class="mob-phrase-label">你的英文：</div>
               <el-input v-model="phraseUserAnswer" type="textarea" :rows="3" resize="vertical"
@@ -745,7 +761,7 @@
             </div>
             <div class="mob-phrase-answer" v-if="phraseRevealAnswer">
               <div class="mob-phrase-label">原文：</div>
-              <div class="mob-phrase-original">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
+              <div class="mob-phrase-original" @click="onWordClick">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
             </div>
             <div class="mob-phrase-btns" v-if="phraseRevealAnswer">
               <el-button type="danger" plain size="small" @click="phraseMarkReview" style="flex:1">需复习</el-button>
@@ -803,6 +819,10 @@
           </div>
           <div v-else class="phrase-card" :class="{ revealed: phraseRevealAnswer }">
             <div class="phrase-zh-display">{{ displayPhrasePairs[phraseCurrentIdx]?.zh }}</div>
+            <div v-if="isWordListPhrase" class="phrase-wordmap" @click="onWordClick">
+              <span class="phrase-wordmap-label">📝 待掌握词汇：</span>
+              <span v-for="(w, wi) in phraseWordItems" :key="wi" class="phrase-wordmap-item">{{ w }}<span v-if="wi < phraseWordItems.length - 1" style="color:#999"> · </span></span>
+            </div>
             <el-divider />
             <div class="phrase-en-area">
               <div class="phrase-en-label">你的英文：</div>
@@ -811,7 +831,7 @@
             </div>
             <div class="phrase-answer-reveal" v-if="phraseRevealAnswer">
               <div class="phrase-en-label">原文：</div>
-              <div class="phrase-en-original">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
+              <div class="phrase-en-original" @click="onWordClick">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
             </div>
             <div class="phrase-actions" v-if="phraseRevealAnswer">
               <el-button type="danger" plain size="small" @click="phraseMarkReview">需复习</el-button>
@@ -894,7 +914,7 @@
           <div class="wa-answer-label">正确答案</div>
           <div class="wa-answer-meaning">{{ wordAnalysis.wordMeaning }}</div>
           <div class="wa-answer-label" style="margin-top:10px">推理链</div>
-          <div class="wa-answer-reasoning">{{ wordAnalysis.rootReasoning }}</div>
+          <div class="wa-answer-reasoning" @click="onWordClick">{{ wordAnalysis.rootReasoning }}</div>
           <el-divider />
           <div class="wa-answer-label">你的推理</div>
           <div class="wa-answer-yours">{{ userMeaningGuess }}</div>
@@ -994,6 +1014,7 @@ function saveWordRoots() {
   }, 800)
 }
 const manualVocab = ref([])
+const starredItems = reactive({})  // keyed by itemText.toLowerCase(), value=true if starred
 const customPrompts = ref([])
 // 反转短语卡片
 const phraseCards = ref([])
@@ -1012,6 +1033,29 @@ const displayPhrasePairs = computed(() => {
   if (!phraseSelectedSet.value) return []
   if (!phraseFilterReview.value) return phraseSelectedSet.value.pairs
   return phraseSelectedSet.value.pairs.filter((_, i) => phraseSelectedSet.value.practiceState[i] === 'review')
+})
+
+// 当前短语pair
+const currentPhrasePair = computed(() => displayPhrasePairs.value[phraseCurrentIdx.value] || null)
+
+// 判断是否为单词/短语列表型（en含/分隔符且每段较短，区别于整句翻译）
+const isWordListPhrase = computed(() => {
+  const p = currentPhrasePair.value
+  if (!p) return false
+  const en = (p.en || '').trim()
+  if (!en.includes('/')) return false
+  const parts = en.split('/').map(s => s.trim()).filter(Boolean)
+  if (parts.length < 3) return false
+  // 每段平均长度 ≤ 25 字符 → 单词列表；否则可能是句子
+  const avgLen = parts.reduce((s, w) => s + w.length, 0) / parts.length
+  return avgLen <= 25
+})
+
+// 单词列表型短语的词汇清单（拆分 en 中的 / 分隔词）
+const phraseWordItems = computed(() => {
+  if (!isWordListPhrase.value) return []
+  const en = (currentPhrasePair.value.en || '').trim()
+  return en.split('/').map(s => s.trim()).filter(Boolean)
 })
 
 // 短语默写方法
@@ -1543,12 +1587,78 @@ const wordInVocab = computed(() => {
   return vocabPool.value.some(v => v.item?.toLowerCase().trim() === w)
 })
 
+// Star system helpers
+function toggleStarItem(itemText) {
+  const key = (itemText || '').toLowerCase().trim()
+  if (!key) return
+  if (starredItems[key]) {
+    delete starredItems[key]
+  } else {
+    starredItems[key] = true
+  }
+  syncData()
+}
+function isStarred(itemText) {
+  const key = (itemText || '').toLowerCase().trim()
+  return !!starredItems[key]
+}
+
+// 自动标星：导入评分JSON时，自动给最关键翻译错误加星标
+const CRITICAL_NEGATION = /\b(not|never|no|nor|neither|hardly|barely|scarcely|rarely|without|none|nothing|nobody|nowhere)\b/i
+const CRITICAL_CONTRAST = /\b(but|however|although|though|despite|yet|whereas|while|unless|otherwise|instead|rather|nevertheless|nonetheless|still|even\s+though|even\s+if|on\s+the\s+contrary|by\s+contrast|in\s+spite\s+of)\b/i
+const CRITICAL_MODAL = /\b(must|should|could|would|may|might|cannot|can't|must\s+not|need\s+not|ought\s+to|shall|will|had\s+better)\b/i
+const CRITICAL_NOTE_KEYWORDS = /完全|相反|翻转|关键|核心|致命|严重|彻底|根本|颠覆|扭曲|曲解|必须|决不可/
+
+function scoreErrorCriticality(te) {
+  let score = 0
+  const en = (te.originalEN || '').trim()
+  const note = (te.note || '')
+
+  // 否定词 — 翻转句意
+  if (CRITICAL_NEGATION.test(en)) score += 3
+  // 逻辑连接词 — 改变逻辑关系
+  if (CRITICAL_CONTRAST.test(en)) score += 3
+  // 情态动词 — 影响确定性/义务
+  if (CRITICAL_MODAL.test(en)) score += 2
+  // note中有强烈警告措辞
+  if (CRITICAL_NOTE_KEYWORDS.test(note)) score += 2
+  // 短语比单个词更容易影响句意
+  if (en.split(/\s+/).length >= 2) score += 1
+
+  return score
+}
+
+function autoStarCriticalErrors(translationErrors) {
+  if (!translationErrors || !translationErrors.length) return
+  // 打分并排序
+  const scored = translationErrors.map((te, i) => ({ te, idx: i, score: scoreErrorCriticality(te) }))
+  scored.sort((a, b) => b.score - a.score)
+  // 取前30%或最多5个，至少1个（如果最高分>0）
+  const maxCount = Math.min(5, Math.max(1, Math.ceil(translationErrors.length * 0.3)))
+  const threshold = scored.length > 0 ? scored[Math.min(maxCount - 1, scored.length - 1)].score : 0
+  if (threshold <= 0) return // 没有值得标星的
+  for (const s of scored) {
+    if (s.score >= threshold) {
+      const key = (s.te.originalEN || '').toLowerCase().trim()
+      if (key) starredItems[key] = true
+    }
+  }
+}
+
 const vocabSearchQuery = ref('')
+const vocabSearchDebounced = ref('')  // debounced for performance
+let _vocabSearchTimer = null
+watch(vocabSearchQuery, (v) => {
+  clearTimeout(_vocabSearchTimer)
+  _vocabSearchTimer = setTimeout(() => { vocabSearchDebounced.value = v }, 200)
+})
 const vocabLevelFilter = ref('')
+const vocabStarFilter = ref(false)  // star-only filter
+const vocabDisplayLimit = ref(50)  // pagination for full dialog
 
 const filteredVocabPool = computed(() => {
   let items = vocabPool.value
-  const query = vocabSearchQuery.value.toLowerCase().trim()
+  const query = vocabSearchDebounced.value.toLowerCase().trim()
   if (query) {
     items = items.filter(v =>
       v.item.toLowerCase().includes(query) ||
@@ -1558,7 +1668,26 @@ const filteredVocabPool = computed(() => {
   if (vocabLevelFilter.value) {
     items = items.filter(v => v.level === vocabLevelFilter.value)
   }
-  return items
+  if (vocabStarFilter.value) {
+    items = items.filter(v => isStarred(v.item))
+  }
+  // Sort: starred items first, then by count
+  return [...items].sort((a, b) => {
+    const aStar = isStarred(a.item) ? 1 : 0
+    const bStar = isStarred(b.item) ? 1 : 0
+    if (aStar !== bStar) return bStar - aStar
+    return b.count - a.count
+  })
+})
+// Paginated slice for display
+const displayedVocabPool = computed(() => filteredVocabPool.value.slice(0, vocabDisplayLimit.value))
+const hasMoreVocab = computed(() => vocabDisplayLimit.value < filteredVocabPool.value.length)
+function loadMoreVocab() {
+  vocabDisplayLimit.value += 50
+}
+// Reset pagination when filters change
+watch([vocabSearchDebounced, vocabLevelFilter, vocabStarFilter], () => {
+  vocabDisplayLimit.value = 50
 })
 
 const vocabPool = computed(() => {
@@ -1586,6 +1715,7 @@ const vocabPool = computed(() => {
     .map(v => ({ ...v, dateCount: v.dates.size }))
     .sort((a, b) => b.count - a.count)
 })
+const vocabPoolTop20 = computed(() => vocabPool.value.slice(0, 20))
 
 function togglePractice() {
   if (practiceStarted.value) {
@@ -1831,6 +1961,7 @@ function syncData() {
         manualVocab: manualVocab.value,
         wordRoots: wordRootsStore,
         phraseCards: phraseCards.value,
+        starredItems: Object.assign({}, starredItems),
         translationDrafts: Object.assign({}, translationDrafts),
         timerStates: Object.assign({}, timerStates),
         exportVersion: 6,
@@ -1876,6 +2007,7 @@ async function flushSave() {
     manualVocab: manualVocab.value,
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
+    starredItems: Object.assign({}, starredItems),
     translationDrafts: Object.assign({}, translationDrafts),
     timerStates: Object.assign({}, timerStates),
     exportVersion: 6,
@@ -1935,6 +2067,7 @@ function restoreBackupData(data) {
   if (data.manualVocab) manualVocab.value = data.manualVocab
   if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots) }
   if (data.phraseCards) phraseCards.value = data.phraseCards
+  if (data.starredItems) Object.assign(starredItems, data.starredItems)
   if (data.translationDrafts) Object.assign(translationDrafts, data.translationDrafts)
   if (data.timerStates) Object.assign(timerStates, data.timerStates)
 }
@@ -1994,37 +2127,50 @@ const WORD_ROOT_PROMPT = `你是英语词源学专家，精通词根词缀拆解
 // ========== 词根词缀分析 ==========
 function getWordAtClick(event) {
   const el = event.currentTarget
-  const text = el.textContent
+  const fullText = el.textContent
+  if (!fullText) return null
   const range = document.createRange()
   let offset = 0
-  // Find click position in text
-  for (const node of el.childNodes) {
+
+  // Recursively walk all descendant text nodes to find click position
+  function walk(node) {
     if (node.nodeType === Node.TEXT_NODE) {
       const nodeLen = node.textContent.length
-      const rects = []
-      // Create ranges for each character to find click position
+      if (!nodeLen) { return false }
+      // Check each character position in this text node
       for (let i = 0; i < nodeLen; i++) {
-        range.setStart(node, i)
-        range.setEnd(node, i + 1)
-        rects.push(range.getBoundingClientRect())
-      }
-      for (let i = 0; i < rects.length; i++) {
-        const r = rects[i]
-        if (r && event.clientX >= r.left && event.clientX <= r.right &&
+        try {
+          range.setStart(node, i)
+          range.setEnd(node, i + 1)
+        } catch { continue }
+        const r = range.getBoundingClientRect()
+        if (r && r.width > 0 && r.height > 0 &&
+            event.clientX >= r.left && event.clientX <= r.right &&
             event.clientY >= r.top && event.clientY <= r.bottom) {
           const charIdx = offset + i
-          // Expand to word boundaries
+          // Expand to word boundaries in the full text
           let start = charIdx, end = charIdx
-          while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) start--
-          while (end < text.length && /[a-zA-Z]/.test(text[end])) end++
-          const word = text.slice(start, end)
+          while (start > 0 && /[a-zA-Z]/.test(fullText[start - 1])) start--
+          while (end < fullText.length && /[a-zA-Z]/.test(fullText[end])) end++
+          const word = fullText.slice(start, end)
           return word.length >= 2 ? word : null
         }
       }
       offset += nodeLen
+      return false
     } else {
-      offset += node.textContent.length
+      // Recurse into element children (e.g. <b>, <span> from v-html)
+      for (const child of node.childNodes) {
+        const result = walk(child)
+        if (result) return result
+      }
+      return false
     }
+  }
+
+  for (const child of el.childNodes) {
+    const result = walk(child)
+    if (result) return result
   }
   return null
 }
@@ -2197,7 +2343,7 @@ function saveScoreResult(parsed) {
     record.timeSpent = Math.max(record.timeSpent || 0, elapsed.value)
     record.date = essay.date
     if (parsed.mistakeWaves) record.mistakeWaves = parsed.mistakeWaves
-    if (parsed.translationErrors) record.translationErrors = parsed.translationErrors
+    if (parsed.translationErrors) { record.translationErrors = parsed.translationErrors; autoStarCriticalErrors(parsed.translationErrors) }
     if (parsed.unknownItems) record.unknownItems = parsed.unknownItems
     if (parsed.errorSpans) record.errorSpans = parsed.errorSpans
   } else {
@@ -2216,6 +2362,7 @@ function saveScoreResult(parsed) {
       ...(parsed.unknownItems ? { unknownItems: parsed.unknownItems } : {}),
       ...(parsed.errorSpans ? { errorSpans: parsed.errorSpans } : {})
     })
+    if (parsed.translationErrors) autoStarCriticalErrors(parsed.translationErrors)
   }
   stopTimer()
   practiceStarted.value = false
@@ -2324,6 +2471,7 @@ function saveReverseScoreResult(parsed) {
     timeSpent: elapsed.value,
     date: currentEssay.value.date
   }
+  if (parsed.translationErrors) autoStarCriticalErrors(parsed.translationErrors)
   // Also save to records for vocab pool / history
   const existingRecord = records.value.find(r => r.essayId === currentEssay.value.id && r.type === 'reverse')
   if (existingRecord) {
@@ -2461,6 +2609,7 @@ function buildBackupJSON() {
     manualVocab: manualVocab.value,
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
+    starredItems: Object.assign({}, starredItems),
     exportVersion: 6,
     savedAt: Date.now()
   }
@@ -2634,6 +2783,7 @@ function importData(file) {
       if (data.manualVocab) { manualVocab.value = data.manualVocab; importedSomething = true }
       if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots); importedSomething = true }
       if (data.phraseCards) { phraseCards.value = data.phraseCards; importedSomething = true }
+      if (data.starredItems) { Object.assign(starredItems, data.starredItems); importedSomething = true }
       if (data.promptConfig) {
         if (data.promptConfig.scoringPrompt) promptConfig.value.scoringPrompt = data.promptConfig.scoringPrompt
         if (data.promptConfig.segmentPrompt) promptConfig.value.segmentPrompt = data.promptConfig.segmentPrompt
@@ -3491,6 +3641,7 @@ watch(reverseUserTranslation, (val) => {
 })
 watch(apiKey, (v) => localStorage.setItem('ett_apikey', v))
 watch(customPrompts, () => saveCustomPrompts(), { deep: true })
+watch(showVocabPoolDialog, (v) => { if (v) vocabDisplayLimit.value = 50 })
 
 // 全局暗色模式：el-dialog teleport 到 body 脱离组件树，需要给 html 加 class 配合非 scoped 样式
 watch(darkMode, (v) => {
@@ -3544,6 +3695,7 @@ const ett = reactive({
   submitTranslation, submitWindowAI, submitReverseTranslation, copyReversePrompt,
   startPractice, openQwen, openImageImport, openHistoryPanel,
   selectWaveSegment, onWordClick, exportData, triggerImport, normalizeMistakeWaves, shareBackup,
+  toggleStarItem, isStarred, vocabStarFilter,
 })
 provide('ett', ett)
 
@@ -3696,6 +3848,8 @@ onMounted(async () => {
 .ett-body:not(.dark) .mw-text { color:#606266; }
 .ett-body:not(.dark) .mw-ex-en { color:#333; }
 .ett-body:not(.dark) .mw-ex-zh { color:#8492a6; }
+.ett-body:not(.dark) .mw-star-btn:hover { background:#fef0e0; }
+.ett-body:not(.dark) .te-star:hover { background:#fef0e0; }
 .ett-body:not(.dark) .vocab-pool-card { background:#fff; border-color:#e4e7ed; }
 .ett-body:not(.dark) .vocab-text { color:#303133; }
 .ett-body:not(.dark) .vocab-meaning { color:#606266; }
@@ -3854,7 +4008,11 @@ onMounted(async () => {
 .phrase-progress-bar { display:flex; align-items:center; font-size:12px; color:#777; margin-bottom:12px; }
 .phrase-card { border:1px solid #1e1e1e; border-radius:10px; padding:20px; background:#0d0d0d; flex:1; }
 .phrase-card.revealed { border-color:#ff5f00; }
-.phrase-zh-display { font-size:18px; line-height:1.8; color:#f8fafc; padding:12px; background:#141414; border-radius:8px; margin-bottom:12px; }
+.phrase-zh-display { font-size:18px; line-height:1.8; color:#f8fafc; padding:12px; background:#141414; border-radius:8px; margin-bottom:8px; }
+/* 单词列表型：词汇对照行 */
+.phrase-wordmap { margin-bottom: 8px; padding: 8px 12px; background: #1a1a2e; border-radius: 8px; cursor: pointer; }
+.phrase-wordmap-label { font-size: 12px; color: #e6a23c; font-weight: 600; }
+.phrase-wordmap-item { font-size: 12px; color: #aaa; font-family: monospace; word-break: break-word; line-height: 1.8; }
 .phrase-en-area { margin-bottom:12px; }
 .phrase-en-label { font-size:12px; color:#777; font-weight:600; margin-bottom:4px; }
 .phrase-answer-reveal { margin-top:12px; padding:12px; background:#0a1a0a; border-radius:8px; border:1px solid #1a2a1a; }
@@ -4124,10 +4282,16 @@ onMounted(async () => {
 .te-row { display: flex; border-bottom: 1px solid #1e1e30; }
 .te-row:last-child { border-bottom: none; }
 .te-cell { padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+.te-star { flex: 0 0 32px; text-align: center; cursor: pointer; font-size: 14px; border-right: 1px solid #1e1e30; display: flex; align-items: center; justify-content: center; user-select: none; }
+.te-star:hover { background: #1a1408; }
 .te-orig { flex: 0 0 140px; color: #ff5f00; font-family: monospace; border-right: 1px solid #1e1e30; background: #0d0d0d; }
 .te-correct { flex: 0 0 120px; color: #22C55E; border-right: 1px solid #1e1e30; }
 .te-wrong { flex: 0 0 130px; color: #ef4444; border-right: 1px solid #1e1e30; text-decoration: line-through; text-decoration-color: #ef444466; }
 .te-note { flex: 1; color: #888; font-size: 11px; }
+.mw-star-btn { cursor: pointer; font-size: 14px; margin-left: auto; user-select: none; padding: 2px 4px; border-radius: 4px; }
+.mw-star-btn:hover { background: #1a1408; }
+.vocab-star { cursor: pointer; font-size: 13px; user-select: none; flex-shrink: 0; margin-right: 2px; }
+.vocab-star:hover { transform: scale(1.2); }
 
 /* ========== 生词短语池 ========== */
 .vocab-pool-card {
@@ -4303,6 +4467,10 @@ html.ett-dark .el-drawer__body { color: #c1c1c1; }
 .mob-phrase-progress { display: flex; align-items: center; margin-bottom: 14px; }
 .mob-phrase-card { background: #1a1a1a; border-radius: 14px; padding: 18px; margin-bottom: 12px; }
 .mob-phrase-zh { font-size: 15px; color: #e0e0e0; text-align: center; margin-bottom: 14px; font-weight: 600; }
+/* 单词列表型：词汇对照行 */
+.mob-phrase-wordmap { text-align: center; margin-bottom: 10px; padding: 8px 10px; background: #1a1a2e; border-radius: 8px; cursor: pointer; }
+.mob-phrase-wordmap-label { font-size: 10px; color: #e6a23c; font-weight: 600; }
+.mob-phrase-wordmap-item { font-size: 10px; color: #bbb; font-family: monospace; word-break: break-word; line-height: 1.8; }
 .mob-phrase-input-area { margin-bottom: 10px; }
 .mob-phrase-label { font-size: 11px; color: #888; margin-bottom: 4px; }
 .mob-phrase-answer { margin-top: 10px; }

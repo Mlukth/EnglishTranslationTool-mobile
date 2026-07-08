@@ -38,7 +38,7 @@
 
     <!-- Tab 2: 练习 -->
     <div v-if="activeTab === 'practice'" class="mobile-tab">
-      <!-- ═══ 吸顶区：标题 + 模式 + 原文（展开时）═══ -->
+      <!-- 吸顶区：标题 + 模式 + 原文（展开时） -->
       <div class="mob-practice-head">
         <div class="mob-header">
           <span style="font-size:calc(11px * var(--ett-fs, 1));color:#888" @click="activeTab='essays'">← 范文库</span>
@@ -75,7 +75,7 @@
         </template>
       </div>
 
-      <!-- ═══ 主内容区 ═══ -->
+      <!-- 主内容区 -->
       <div v-if="$.currentEssay" class="mob-practice-body">
         <!-- 原文折叠条（收起时在内容流里） -->
         <div v-if="$.scoringMode !== 'wave' && !mobSrcShow" class="mob-src-bar" @click="mobSrcShow = true">
@@ -113,11 +113,11 @@
           </div>
           <div class="mob-fb-card">
             <div class="mob-fb-title">AI 点评</div>
-            <div class="mob-fb-text" v-html="$.renderedFeedback"></div>
+            <div class="mob-fb-text" v-html="$.renderedFeedback" @click="$.onWordClick($event)"></div>
           </div>
           <!-- 译文对照 -->
           <div v-if="$.diffResult.userLines.length && $.scoringMode !== 'reverse'" class="mob-section-label">译文对照 <span style="font-weight:400;font-size:calc(8px * var(--ett-fs, 1));color:#888">🟢匹配 🟡差异 🔴缺失</span></div>
-          <div v-if="$.diffResult.userLines.length && $.scoringMode !== 'reverse'" class="mob-cmp">
+          <div v-if="$.diffResult.userLines.length && $.scoringMode !== 'reverse'" class="mob-cmp" @click="$.onWordClick($event)">
             <div v-for="(line,i) in $.diffResult.userLines" :key="'c'+i" style="margin-bottom:6px">
               <div :style="{color: line.type==='match'?'#22C55E':line.type==='diff'?'#e6a23c':'#ef4444', fontSize: 'calc(9px * var(--ett-fs, 1))', lineHeight: '1.6'}">
                 <b :style="{color: line.type==='match'?'#22C55E':'#f87171'}">你：</b>
@@ -133,10 +133,11 @@
           <!-- 错误结构分析（水波纠错） -->
           <template v-if="$.normalizeMistakeWaves($.rightPanelRecord).length && $.scoringMode !== 'reverse'">
             <div class="mob-section-label">🌊 错误结构分析（{{ $.normalizeMistakeWaves($.rightPanelRecord).length }}处）</div>
-            <div v-for="(mw, wi) in $.normalizeMistakeWaves($.rightPanelRecord)" :key="'mw'+wi" class="mob-wave-box">
+            <div v-for="(mw, wi) in $.normalizeMistakeWaves($.rightPanelRecord)" :key="'mw'+wi" class="mob-wave-box" @click="$.onWordClick($event)">
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
                 <span v-if="mw.sentenceIndex !== null" style="font-size:calc(9px*var(--ett-fs,1));background:#409eff;color:#fff;padding:1px 6px;border-radius:8px">第{{ mw.sentenceIndex + 1 }}句</span>
                 <span style="font-size:calc(9px*var(--ett-fs,1));background:#e6a23c;color:#fff;padding:1px 6px;border-radius:8px">{{ mw.errorType || '结构性错误' }}</span>
+                <span v-if="mw.patternEN" @click.stop="$.toggleStarItem(mw.patternEN)" :title="$.isStarred(mw.patternEN) ? '取消星标' : '星标此结构'" style="cursor:pointer;font-size:calc(12px*var(--ett-fs,1));margin-left:auto">{{ $.isStarred(mw.patternEN) ? '⭐' : '☆' }}</span>
               </div>
               <div class="mob-wave-row" v-if="mw.studentError">
                 <span class="mob-wave-lbl">学生错译</span>
@@ -164,17 +165,20 @@
               </div>
             </div>
           </template>
-          <!-- 翻译错误对照（手机） -->
+          <!-- 翻译错误对照（手机） — 星标在右上角 -->
           <template v-if="$.rightPanelRecord?.translationErrors?.length">
             <div class="mob-section-label">📋 翻译错误对照</div>
-            <div v-for="(te, i) in $.rightPanelRecord.translationErrors" :key="'te'+i" class="mob-wave-box" style="padding:8px 10px">
-              <div style="display:flex;flex-wrap:wrap;gap:4px;font-size:calc(9px*var(--ett-fs,1));line-height:1.5">
-                <span style="color:#ff5f00;font-family:monospace;margin-right:4px">{{ te.originalEN }}</span>
-                <span style="color:#888">→</span>
-                <span style="color:#22C55E;margin:0 4px">{{ $.scoringMode==='reverse' ? (te.correctEN || '') : (te.correctZH || '') }}</span>
-                <span style="color:#888">（你译：</span>
-                <span style="color:#ef4444;text-decoration:line-through">{{ $.scoringMode==='reverse' ? (te.studentEN || '') : (te.studentZH || '') }}</span>
-                <span style="color:#888">）</span>
+            <div v-for="(te, i) in $.rightPanelRecord.translationErrors" :key="'te'+i" class="mob-wave-box" style="padding:8px 10px" @click="$.onWordClick($event)">
+              <div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px">
+                <div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;font-size:calc(9px*var(--ett-fs,1));line-height:1.5">
+                  <span style="color:#ff5f00;font-family:monospace;margin-right:4px">{{ te.originalEN }}</span>
+                  <span style="color:#888">→</span>
+                  <span style="color:#22C55E;margin:0 4px">{{ $.scoringMode==='reverse' ? (te.correctEN || '') : (te.correctZH || '') }}</span>
+                  <span style="color:#888">（你译：</span>
+                  <span style="color:#ef4444;text-decoration:line-through">{{ $.scoringMode==='reverse' ? (te.studentEN || '') : (te.studentZH || '') }}</span>
+                  <span style="color:#888">）</span>
+                </div>
+                <span @click.stop="$.toggleStarItem($.scoringMode==='reverse' ? (te.correctEN || te.originalEN) : te.originalEN)" :title="$.isStarred($.scoringMode==='reverse' ? (te.correctEN || te.originalEN) : te.originalEN) ? '取消星标' : '星标关键错误'" style="cursor:pointer;font-size:calc(12px*var(--ett-fs,1));flex-shrink:0">{{ $.isStarred($.scoringMode==='reverse' ? (te.correctEN || te.originalEN) : te.originalEN) ? '⭐' : '☆' }}</span>
               </div>
               <div v-if="te.note" style="font-size:calc(8px*var(--ett-fs,1));color:#666;margin-top:2px">{{ te.note }}</div>
             </div>
@@ -188,7 +192,7 @@
             <span class="mob-wave-num">{{ i+1 }}</span>
             <span class="mob-wave-txt">{{ seg.en.slice(0,50) }}...</span>
           </div>
-          <div v-if="$.waveAnswer" class="mob-fb-card">
+          <div v-if="$.waveAnswer" class="mob-fb-card" @click="$.onWordClick($event)">
             <div class="mob-fb-title">📝 第{{ $.waveSelectedIdx+1 }}句分析</div>
             <div v-if="$.waveAnswer.grammarTree" style="font-size:calc(9px * var(--ett-fs, 1));color:#aaa;line-height:1.5">{{ $.waveAnswer.grammarTree }}</div>
           </div>
@@ -221,11 +225,11 @@
             </div>
             <div class="mob-fb-card">
               <div class="mob-fb-title">AI 点评</div>
-              <div class="mob-fb-text" v-html="$.renderedFeedback"></div>
+              <div class="mob-fb-text" v-html="$.renderedFeedback" @click="$.onWordClick($event)"></div>
             </div>
             <!-- 反转译文对照 -->
             <div v-if="$.reverseDiffResult.userLines.length" class="mob-section-label">译文对照（反转）</div>
-            <div v-if="$.reverseDiffResult.userLines.length" class="mob-cmp">
+            <div v-if="$.reverseDiffResult.userLines.length" class="mob-cmp" @click="$.onWordClick($event)">
               <div v-for="(line,i) in $.reverseDiffResult.userLines" :key="'rc'+i" style="margin-bottom:6px">
                 <div :style="{color: line.type==='match'?'#22C55E':line.type==='diff'?'#e6a23c':'#ef4444', fontSize: 'calc(9px * var(--ett-fs, 1))', lineHeight: '1.6'}">
                   <b :style="{color: line.type==='match'?'#22C55E':'#f87171'}">你：</b>
@@ -355,10 +359,77 @@
       <span style="font-size:calc(18px * var(--ett-fs, 1))">👤</span><span style="font-size:calc(10px * var(--ett-fs, 1))">我的</span>
     </div>
   </div>
+
+  <!-- 移动端批注：涂鸦悬浮工具栏 + 画布 -->
+  <template v-if="mobAnnoMode">
+    <canvas ref="mobAnnoCanvasRef" class="mob-anno-canvas"
+      :class="{ 'mob-anno-pointer-mode': mobPointerMode }"
+      @touchstart="onMobAnnoTouchStart"
+      @touchmove="onMobAnnoTouchMove"
+      @touchend="onMobAnnoTouchEnd"
+    ></canvas>
+    <div class="mob-anno-toolbar" :class="{ collapsed: mobToolbarCollapsed }"
+      ref="mobToolbarRef"
+      @touchstart="onToolbarDragStart" @touchmove="onToolbarDragMove" @touchend="onToolbarDragEnd">
+      <div class="mob-anno-toolbar-handle" @click="mobToolbarCollapsed = !mobToolbarCollapsed">
+        <span v-if="mobToolbarCollapsed">🖊️</span>
+        <span v-else>✕ 收起</span>
+      </div>
+      <template v-if="!mobToolbarCollapsed">
+        <!-- 三模式切换：笔 → 橡皮 → 箭头（指针） -->
+        <div class="mob-anno-mode-row">
+          <div class="mob-anno-mode-btn" :class="{ active: !mobIsErasing && !mobPointerMode }"
+            @click="mobIsErasing = false; mobPointerMode = false">
+            ✏️ 笔
+          </div>
+          <div class="mob-anno-mode-btn" :class="{ active: mobIsErasing }"
+            @click="mobIsErasing = true; mobPointerMode = false">
+            🧹 橡皮
+          </div>
+          <div class="mob-anno-mode-btn" :class="{ active: mobPointerMode }"
+            @click="mobPointerMode = true; mobIsErasing = false">
+            ↖ 指针
+          </div>
+        </div>
+        <div class="mob-anno-colors" v-if="!mobPointerMode">
+          <span v-for="c in mobDrawColors" :key="c.color" class="mob-anno-color-dot"
+            :class="{ active: mobDrawColor === c.color && !mobIsErasing }"
+            :style="{ background: c.css }"
+            @click="mobDrawColor = c.color; mobIsErasing = false"></span>
+        </div>
+        <div class="mob-anno-width-row" v-if="!mobPointerMode">
+          <span class="mob-anno-width-label">粗细</span>
+          <input type="range" min="1" max="12" v-model.number="mobDrawWidth" class="mob-anno-width-slider" />
+          <span class="mob-anno-width-val">{{ mobDrawWidth }}</span>
+        </div>
+        <div class="mob-anno-actions" v-if="!mobPointerMode">
+          <div class="mob-anno-btn" @click="mobClearAnno" :style="{opacity: mobAnnoCount > 0 ? 1 : 0.4}">
+            🗑 清除({{ mobAnnoCount }})
+          </div>
+        </div>
+        <div v-if="mobPointerMode" class="mob-anno-pointer-hint">
+          💡 指针模式：可正常操作页面，涂鸦保留可见
+        </div>
+        <div class="mob-anno-btn mob-anno-exit" @click="mobAnnoMode = false">退出批注</div>
+      </template>
+    </div>
+  </template>
+  <!-- 批注模式入口悬浮球（可拖拽 + 自动半收起） -->
+  <div v-if="activeTab === 'practice' && !mobAnnoMode"
+    class="mob-anno-entry"
+    :class="{ 'mob-anno-entry-collapsed': mobEntryCollapsed }"
+    :style="mobEntryStyle"
+    ref="mobEntryRef"
+    @touchstart="onEntryDragStart"
+    @touchmove="onEntryDragMove"
+    @touchend="onEntryDragEnd"
+    @click="onEntryClick">
+    🖊️
+  </div>
 </template>
 
 <script setup>
-import { ref, inject, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, inject, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 
 const $ = inject('ett')
 
@@ -391,7 +462,6 @@ function openQwenMobile() {
   const url = qwenUrl.value.trim() || 'https://chat.qwen.ai'
   const pkg = qwenBrowser.value.trim()
   if (pkg) {
-    // Android intent: try to open with specific browser
     const intentUrl = `intent://${url.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=${pkg};S.browser_fallback_url=${encodeURIComponent(url)};end`
     const fallback = () => window.open(url, '_blank')
     try { window.location.href = intentUrl; setTimeout(fallback, 800) } catch { fallback() }
@@ -404,15 +474,401 @@ function checkMobile() {
   if (window.innerWidth >= 768) { $.isMobile.value = false }
 }
 window.addEventListener('resize', checkMobile)
-onUnmounted(() => window.removeEventListener('resize', checkMobile))
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+  clearEntryCollapseTimer()
+})
+
+// 页面加载后启动悬浮球自动收起计时
+onMounted(() => {
+  // 如果已有保存位置且非批注模式，启动收起计时
+  if (!mobAnnoMode.value) startEntryCollapseTimer()
+})
+
+// ══════════════════════════════════════════
+// 移动端批注系统（涂鸦笔 + 橡皮擦 + 悬浮工具栏）
+// ══════════════════════════════════════════
+const mobAnnoMode = ref(false)
+const mobIsDrawing = ref(false)
+const mobIsErasing = ref(false)
+const mobPointerMode = ref(false)  // 箭头/指针模式：canvas透传触摸，可正常操作页面
+const mobDrawColor = ref('#FF0000')
+const mobDrawWidth = ref(3)
+const mobCurrentStroke = ref([])
+const mobAnnoCanvasRef = ref(null)
+const mobToolbarRef = ref(null)
+const mobToolbarCollapsed = ref(false)
+let toolbarDragging = false
+let toolbarStartX = 0, toolbarStartY = 0
+let toolbarOrigX = 0, toolbarOrigY = 0
+
+// 悬浮入口按钮：拖拽 + 自动半收起
+const mobEntryRef = ref(null)
+const mobEntryCollapsed = ref(false)
+const mobEntryPos = ref({ x: 0, y: 0 })  // 用户拖拽的当前位置
+let entryDragging = false
+let entryStartX = 0, entryStartY = 0
+let entryOrigX = 0, entryOrigY = 0
+let entryCollapseTimer = null
+let entryHasMoved = false  // 本次触摸是否产生了位移（区分拖拽和点击）
+
+// 读取持久化的悬浮球位置
+try {
+  const saved = localStorage.getItem('ett_entry_pos')
+  if (saved) {
+    const p = JSON.parse(saved)
+    mobEntryPos.value = { x: p.x, y: p.y }
+  }
+} catch {}
+
+const mobEntryStyle = computed(() => {
+  const pos = mobEntryPos.value
+  const style = {}
+  // 使用用户拖拽的位置
+  if (pos.x || pos.y) {
+    style.left = pos.x + 'px'
+    style.top = pos.y + 'px'
+  }
+  // 收起状态：用 transform 滑出半边，不改变 left/top 定位
+  if (mobEntryCollapsed.value) {
+    const cx = pos.x || (window.innerWidth - 52)  // 无保存位置时默认右下
+    const halfW = window.innerWidth / 2
+    style.transform = cx < halfW ? 'translateX(-28px)' : 'translateX(28px)'
+    style.opacity = '0.35'
+  } else {
+    style.transform = 'translateX(0)'
+    style.opacity = '1'
+  }
+  return style
+})
+
+const mobDrawColors = [
+  { color: '#FF0000', css: '#FF0000', name: '红色' },
+  { color: '#00AA00', css: '#00AA00', name: '绿色' },
+  { color: '#0066FF', css: '#0066FF', name: '蓝色' },
+  { color: '#FF8800', css: '#FF8800', name: '橙色' },
+  { color: '#000000', css: '#000000', name: '黑色' },
+]
+
+function mobInitCanvas() {
+  const canvas = mobAnnoCanvasRef.value
+  if (!canvas) return
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+  canvas.style.width = window.innerWidth + 'px'
+  canvas.style.height = window.innerHeight + 'px'
+  mobRedrawCanvas()
+}
+
+function mobRedrawCanvas() {
+  const canvas = mobAnnoCanvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  const anns = mobGetCurrentAnnotations()
+  for (const ann of anns) {
+    mobDrawStroke(ctx, ann.points, ann.color, ann.width)
+  }
+  if (mobCurrentStroke.value.length > 1) {
+    mobDrawStroke(ctx, mobCurrentStroke.value, mobDrawColor.value, mobDrawWidth.value)
+  }
+}
+
+function mobDrawStroke(ctx, points, color, width) {
+  if (points.length < 2) return
+  ctx.beginPath()
+  ctx.strokeStyle = color
+  ctx.lineWidth = width
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.moveTo(points[0].x, points[0].y)
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y)
+  }
+  ctx.stroke()
+}
+
+function mobGetCurrentAnnotations() {
+  try {
+    const raw = localStorage.getItem('ett_annotations_mob')
+    if (!raw) return []
+    const all = JSON.parse(raw)
+    const eid = $.currentEssayId
+    return eid && all[eid] ? all[eid] : []
+  } catch { return [] }
+}
+
+function mobSaveCurrentAnnotations(anns) {
+  try {
+    const raw = localStorage.getItem('ett_annotations_mob')
+    const all = raw ? JSON.parse(raw) : {}
+    const eid = $.currentEssayId
+    if (eid) {
+      all[eid] = anns
+      localStorage.setItem('ett_annotations_mob', JSON.stringify(all))
+    }
+  } catch {}
+}
+
+const mobAnnoCount = computed(() => mobGetCurrentAnnotations().length)
+
+function mobGetTouchPos(e) {
+  const canvas = mobAnnoCanvasRef.value
+  if (!canvas || !e.touches || !e.touches.length) return null
+  const rect = canvas.getBoundingClientRect()
+  const scaleX = canvas.width / rect.width
+  const scaleY = canvas.height / rect.height
+  return {
+    x: (e.touches[0].clientX - rect.left) * scaleX,
+    y: (e.touches[0].clientY - rect.top) * scaleY
+  }
+}
+
+function onMobAnnoTouchStart(e) {
+  if (mobPointerMode.value) return  // 指针模式：放行触摸，不拦截
+  e.preventDefault()
+  const pos = mobGetTouchPos(e)
+  if (!pos) return
+  if (mobIsErasing.value) {
+    const erased = mobEraseAtPos(pos)
+    if (erased) mobRedrawCanvas()
+  } else {
+    mobIsDrawing.value = true
+    mobCurrentStroke.value = [{ x: pos.x, y: pos.y }]
+  }
+}
+
+function onMobAnnoTouchMove(e) {
+  if (mobPointerMode.value) return
+  e.preventDefault()
+  const pos = mobGetTouchPos(e)
+  if (!pos) return
+  if (mobIsDrawing.value) {
+    mobCurrentStroke.value.push({ x: pos.x, y: pos.y })
+    mobRedrawCanvas()
+  } else if (mobIsErasing.value) {
+    const erased = mobEraseAtPos(pos)
+    if (erased) mobRedrawCanvas()
+  }
+}
+
+function onMobAnnoTouchEnd(e) {
+  if (mobPointerMode.value) return
+  e.preventDefault()
+  if (mobIsDrawing.value && mobCurrentStroke.value.length > 1) {
+    const anns = mobGetCurrentAnnotations()
+    anns.push({
+      points: [...mobCurrentStroke.value],
+      color: mobDrawColor.value,
+      width: mobDrawWidth.value
+    })
+    mobSaveCurrentAnnotations(anns)
+  }
+  mobIsDrawing.value = false
+  mobCurrentStroke.value = []
+}
+
+function mobEraseAtPos(pos) {
+  const size = mobDrawWidth.value * 4 + 4
+  const half = size / 2
+  const rect = { left: pos.x - half, right: pos.x + half, top: pos.y - half, bottom: pos.y + half }
+  const anns = mobGetCurrentAnnotations()
+  const newAnns = []
+  let changed = false
+  for (const ann of anns) {
+    const segments = mobSplitStrokeByRect(ann.points, rect)
+    if (segments.length === 1 && segments[0].length === ann.points.length) {
+      newAnns.push(ann)
+    } else {
+      changed = true
+      for (const seg of segments) {
+        if (seg.length > 1) newAnns.push({ points: seg, color: ann.color, width: ann.width })
+      }
+    }
+  }
+  if (changed) mobSaveCurrentAnnotations(newAnns)
+  return changed
+}
+
+function mobSplitStrokeByRect(points, rect) {
+  const segments = []
+  let current = []
+  for (const p of points) {
+    const inside = p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom
+    if (inside) {
+      if (current.length > 1) { segments.push(current); current = [] }
+      else { current = [] }
+    } else {
+      if (current.length === 0) current.push(p)
+      else current.push(p)
+    }
+  }
+  if (current.length > 1) segments.push(current)
+  return segments
+}
+
+function mobClearAnno() {
+  mobSaveCurrentAnnotations([])
+  mobCurrentStroke.value = []
+  mobRedrawCanvas()
+}
+
+// 悬浮工具栏拖拽
+function onToolbarDragStart(e) {
+  if (!e.touches || !e.touches.length) return
+  const el = mobToolbarRef.value
+  if (!el) return
+  toolbarDragging = true
+  toolbarStartX = e.touches[0].clientX
+  toolbarStartY = e.touches[0].clientY
+  const rect = el.getBoundingClientRect()
+  toolbarOrigX = rect.left
+  toolbarOrigY = rect.top
+}
+
+function onToolbarDragMove(e) {
+  if (!toolbarDragging || !e.touches || !e.touches.length) return
+  const el = mobToolbarRef.value
+  if (!el) return
+  const dx = e.touches[0].clientX - toolbarStartX
+  const dy = e.touches[0].clientY - toolbarStartY
+  const newLeft = Math.max(0, Math.min(window.innerWidth - el.offsetWidth, toolbarOrigX + dx))
+  const newTop = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, toolbarOrigY + dy))
+  el.style.left = newLeft + 'px'
+  el.style.top = newTop + 'px'
+}
+
+function onToolbarDragEnd() {
+  toolbarDragging = false
+}
+
+// 悬浮入口按钮：拖拽（参照 iOS AssistiveTouch — 拖时自由，松手2秒后轻靠边）
+function onEntryDragStart(e) {
+  // ❗ 不在这里 preventDefault——会让移动端 click 事件无法合成
+  if (!e.touches || !e.touches.length) return
+  entryDragging = true
+  entryHasMoved = false
+  entryStartX = e.touches[0].clientX
+  entryStartY = e.touches[0].clientY
+  const el = mobEntryRef.value
+  if (!el) return
+  // 拖拽时关闭 CSS transition，保证1:1跟手
+  el.style.transition = 'none'
+  // 如果当前是半收起状态，先展开到手指位置
+  if (mobEntryCollapsed.value) {
+    mobEntryCollapsed.value = false
+    const rect = el.getBoundingClientRect()
+    mobEntryPos.value = { x: Math.max(0, Math.min(window.innerWidth - 44, rect.left)), y: rect.top }
+  }
+  clearEntryCollapseTimer()
+  const rect = el.getBoundingClientRect()
+  entryOrigX = rect.left
+  entryOrigY = rect.top
+}
+
+function onEntryDragMove(e) {
+  if (!entryDragging || !e.touches || !e.touches.length) return
+  const dx = e.touches[0].clientX - entryStartX
+  const dy = e.touches[0].clientY - entryStartY
+  // 超过 5px 才确认是拖拽（给 tap 留余地）
+  if (!entryHasMoved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return
+  if (!entryHasMoved) {
+    entryHasMoved = true
+    e.preventDefault()  // 确认拖拽后才阻止默认行为（阻止页面滚动）
+  }
+  // 自由跟手，不吸边 — Apple AssistiveTouch 松手后才靠边
+  const newLeft = Math.max(0, Math.min(window.innerWidth - 44, entryOrigX + dx))
+  const newTop = Math.max(0, Math.min(window.innerHeight - 44, entryOrigY + dy))
+  mobEntryPos.value = { x: newLeft, y: newTop }
+  const el = mobEntryRef.value
+  if (el) { el.style.left = newLeft + 'px'; el.style.top = newTop + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto' }
+}
+
+function onEntryDragEnd(e) {
+  entryDragging = false
+  if (!entryHasMoved) {
+    // 是 tap，恢复 transition
+    const el = mobEntryRef.value
+    if (el) el.style.transition = ''
+    return
+  }
+  // 保存位置
+  try { localStorage.setItem('ett_entry_pos', JSON.stringify(mobEntryPos.value)) } catch {}
+  // 恢复 CSS transition，以便后续收起动画能平滑过渡
+  const el = mobEntryRef.value
+  if (el) el.style.transition = ''
+  // 2秒后轻柔靠边收起
+  startEntryCollapseTimer()
+}
+
+function onEntryClick(e) {
+  if (entryHasMoved) return
+  mobEntryCollapsed.value = false
+  clearEntryCollapseTimer()
+  // 先进入批注模式，等工具栏渲染后再定位
+  mobAnnoMode.value = true
+  nextTick(() => positionToolbarNearEntry())
+}
+
+// 智能定位工具栏：根据悬浮球在屏幕的哪一侧，把工具栏放到同侧
+function positionToolbarNearEntry() {
+  const el = mobToolbarRef.value
+  if (!el) return
+  const pos = mobEntryPos.value
+  const cx = pos.x || (window.innerWidth - 52)
+  const halfW = window.innerWidth / 2
+  // 水平：球在左半屏 → 工具栏靠左展开；球在右半屏 → 工具栏靠右展开
+  if (cx < halfW) {
+    el.style.left = '8px'; el.style.right = 'auto'
+  } else {
+    el.style.left = 'auto'; el.style.right = '8px'
+  }
+  // 垂直：贴近球的高度，限制不超出屏幕
+  const ballY = pos.y || (window.innerHeight * 0.6)
+  const toolbarH = el.offsetHeight || 220
+  const topY = Math.max(40, Math.min(window.innerHeight - toolbarH - 60, ballY - 40))
+  el.style.top = topY + 'px'
+}
+
+function startEntryCollapseTimer() {
+  clearEntryCollapseTimer()
+  entryCollapseTimer = setTimeout(() => {
+    mobEntryCollapsed.value = true
+  }, 2000)
+}
+
+function clearEntryCollapseTimer() {
+  if (entryCollapseTimer) { clearTimeout(entryCollapseTimer); entryCollapseTimer = null }
+}
+
+watch(mobAnnoMode, (v) => {
+  if (v) {
+    mobPointerMode.value = false  // 每次进入批注默认笔模式
+    nextTick(() => {
+      mobInitCanvas()
+      window.addEventListener('resize', mobInitCanvas)
+    })
+  } else {
+    window.removeEventListener('resize', mobInitCanvas)
+    mobToolbarCollapsed.value = false
+    mobPointerMode.value = false
+    // 退出批注后启动悬浮球自动收起
+    startEntryCollapseTimer()
+  }
+})
+
+watch(() => $.currentEssayId, () => {
+  if (mobAnnoMode.value) nextTick(() => mobInitCanvas())
+})
 </script>
 
 <style scoped>
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 .ett-mobile-body {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
   padding-bottom: 48px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .mob-bottom-nav {
@@ -431,7 +887,7 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
   flex: 1; display: flex; flex-direction: column; overflow-y: auto;
 }
 
-/* ═══ 吸顶头：标题 + 模式 + 原文(展开时) stuck to top ═══ */
+/* 吸顶头 */
 .mob-practice-head {
   position: -webkit-sticky;
   position: sticky; top: 0; z-index: 60;
@@ -439,7 +895,6 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
   flex-shrink: 0;
 }
 
-/* 原文展开区（在 sticky head 内部，限高防占满屏） */
 .mob-src-body-expanded {
   max-height: 40vh;
   overflow-y: auto;
@@ -447,7 +902,6 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
   border-bottom: 1px solid #2d2d3f;
 }
 
-/* 展开状态下的原文条 */
 .mob-src-bar-open {
   border-bottom: none;
   border-radius: 8px 8px 0 0;
@@ -483,16 +937,13 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 .mob-action-btn.primary { background: #409eff; }
 .mob-action-btn.success { background: #22C55E; }
 
-/* 练习页 */
 .mob-mode-pills { display: flex; gap: 4px; padding: 2px 14px 8px; flex-shrink: 0; }
 .mob-pill { padding: 4px 10px; border-radius: 12px; font-size: calc(9px * var(--ett-fs, 1)); background: #2d2d3f; color: #888; cursor: pointer; }
 .mob-pill.active { background: #e6a23c; color: #fff; }
 
 .mob-practice-scroll { flex: 1; overflow-y: auto; padding: 0 14px; }
-/* 原文区（对齐练习页方案A设计） */
 .mob-src-bar { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: #2d2d3f; border-radius: 8px; cursor: pointer; margin-bottom: 4px; }
 .mob-src-count { font-size: calc(9px * var(--ett-fs, 1)); color: #666; background: #374151; padding: 2px 6px; border-radius: 8px; }
-/* .mob-src-body 已被 mob-src-sticky 替代 */
 .mob-src-scroll { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 0; padding: 6px 0; }
 .mob-src-scroll::-webkit-scrollbar { height: 0; }
 .mob-seg { min-width: 100%; max-width: 100%; scroll-snap-align: start; padding: 8px 10px; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
@@ -584,12 +1035,10 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 .mob-fs-btn { width: 28px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: calc(10px * var(--ett-fs, 1)); color: #888; cursor: pointer; }
 .mob-fs-btn.on { background: #409eff; color: #fff; }
 
-/* 译文对照 */
 .mob-cmp { margin-bottom: 8px; }
 .mob-cmp div { word-break: break-word; overflow-wrap: break-word; min-width: 0; }
 .mob-cmp b { font-weight: 600; margin-right: 4px; flex-shrink: 0; }
 
-/* 字体大小滑块 */
 .mob-fs-slider {
   -webkit-appearance: none; appearance: none;
   flex: 1; height: 4px; background: #374151; border-radius: 2px; outline: none;
@@ -600,7 +1049,6 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 }
 .mob-fs-pct { font-size: calc(9px * var(--ett-fs, 1)); color: #888; min-width: 30px; text-align: center; }
 
-/* 错误结构分析（水波纠错） */
 .mob-wave-box { background: #2d2d3f; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
 .mob-wave-row { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
 .mob-wave-lbl { font-size: calc(8px * var(--ett-fs, 1)); color: #e6a23c; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -611,4 +1059,113 @@ onUnmounted(() => window.removeEventListener('resize', checkMobile))
 .mob-wave-ex-en { color: #ff5f00; font-family: monospace; word-break: break-word; min-width: 0; }
 .mob-wave-ex-arrow { color: #666; flex-shrink: 0; }
 .mob-wave-ex-zh { color: #bbb; word-break: break-word; min-width: 0; }
+
+/* 移动端批注系统 */
+.mob-anno-canvas {
+  position: fixed; top: 0; left: 0; z-index: 200;
+  pointer-events: auto; touch-action: none;
+}
+/* 指针模式：canvas 透传触摸，页面可正常交互，涂鸦保留可见 */
+.mob-anno-canvas.mob-anno-pointer-mode {
+  pointer-events: none;
+}
+
+.mob-anno-entry {
+  position: fixed; bottom: 64px; right: 12px; z-index: 150;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: #409eff; color: #fff; font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(64,158,255,0.4);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none;
+  touch-action: none;
+  /* transform + opacity 做收起/展开的柔性动画；拖拽时 JS 关掉 transition */
+  transition: transform 0.35s cubic-bezier(0.25, 0.8, 0.25, 1.2), opacity 0.35s ease;
+}
+
+.mob-anno-toolbar {
+  position: fixed; z-index: 210; left: 8px; top: 80px;
+  background: #1e1e30; border: 1px solid #3d3d5c; border-radius: 12px;
+  padding: 8px; min-width: 160px; max-width: 220px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5); user-select: none;
+  -webkit-user-select: none; touch-action: none;
+}
+.mob-anno-toolbar.collapsed {
+  min-width: auto; padding: 4px 8px; border-radius: 20px;
+}
+
+.mob-anno-toolbar-handle {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px 0; cursor: pointer; font-size: calc(11px*var(--ett-fs,1));
+  color: #aaa; border-bottom: 1px solid #2d2d3f; margin-bottom: 6px;
+}
+.mob-anno-toolbar.collapsed .mob-anno-toolbar-handle {
+  border-bottom: none; margin-bottom: 0;
+}
+
+/* 三模式切换行：笔 / 橡皮 / 指针 */
+.mob-anno-mode-row {
+  display: flex; gap: 4px; padding: 4px 0;
+}
+.mob-anno-mode-btn {
+  flex: 1; text-align: center; padding: 6px 2px; border-radius: 8px;
+  font-size: calc(10px*var(--ett-fs,1)); color: #888; background: #2d2d3f;
+  cursor: pointer; transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mob-anno-mode-btn.active {
+  background: #409eff; color: #fff;
+}
+
+/* 指针模式提示 */
+.mob-anno-pointer-hint {
+  text-align: center; padding: 6px 4px; margin: 4px 0;
+  font-size: calc(9px*var(--ett-fs,1)); color: #e6a23c;
+  background: #2a2a1a; border-radius: 6px;
+  line-height: 1.4;
+}
+
+.mob-anno-colors {
+  display: flex; gap: 6px; justify-content: center; padding: 4px 0;
+}
+.mob-anno-color-dot {
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: border 0.15s;
+}
+.mob-anno-color-dot.active {
+  border-color: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.3);
+}
+
+.mob-anno-width-row {
+  display: flex; align-items: center; gap: 6px; padding: 6px 0;
+}
+.mob-anno-width-label {
+  font-size: calc(9px*var(--ett-fs,1)); color: #888; flex-shrink: 0;
+}
+.mob-anno-width-slider {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 4px; background: #374151; border-radius: 2px; outline: none;
+}
+.mob-anno-width-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 8px; background: #409eff; cursor: pointer;
+}
+.mob-anno-width-val {
+  font-size: calc(9px*var(--ett-fs,1)); color: #aaa; min-width: 16px; text-align: center;
+}
+
+.mob-anno-actions {
+  display: flex; gap: 4px; padding: 4px 0;
+}
+.mob-anno-btn {
+  flex: 1; text-align: center; padding: 6px 4px; border-radius: 8px;
+  font-size: calc(9px*var(--ett-fs,1)); color: #aaa; background: #2d2d3f;
+  cursor: pointer; transition: background 0.15s;
+}
+.mob-anno-btn.active {
+  background: #e6a23c; color: #fff;
+}
+.mob-anno-btn.mob-anno-exit {
+  background: #374151; color: #888; margin-top: 4px;
+}
 </style>
