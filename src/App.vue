@@ -577,6 +577,7 @@
         </el-select>
         <span style="font-size:12px;color:#777;white-space:nowrap">共 {{ filteredVocabPool.length }} 词</span>
         <el-button size="small" :type="vocabStarFilter ? 'warning' : 'default'" @click="vocabStarFilter = !vocabStarFilter" style="margin-left:4px">{{ vocabStarFilter ? '⭐ 已星标' : '☆ 全部' }}</el-button>
+        <el-button size="small" type="info" plain @click="exportVocabForWordChase" :disabled="!vocabPool.length" style="margin-left:auto">⬇ 导出给WordChase</el-button>
       </div>
       <div class="vocab-pool-full-list">
         <div v-for="item in displayedVocabPool" :key="item.item" class="vocab-item" @click="onWordClick">
@@ -1860,7 +1861,7 @@ const vocabPool = computed(() => {
     const key = item.item?.toLowerCase().trim()
     if (!key) return
     if (!pool[key]) {
-      pool[key] = { ...item, count: 1, dates: new Set([item.date]) }
+      pool[key] = { ...item, count: item.count || 1, dates: new Set([item.date]) }
     }
   })
   return Object.values(pool)
@@ -2428,6 +2429,57 @@ function addWordToVocab() {
   showWordAnalysis.value = false
 }
 
+// WordChase 生词池增量合并：按 item 小写去重，已存在累加 count，不存在追加（带来源标记）
+function mergeVocabFromImport(items) {
+  let added = 0, bumped = 0
+  for (const it of items) {
+    const key = it.item?.toLowerCase().trim()
+    if (!key) continue
+    const exist = manualVocab.value.find(v => v.item?.toLowerCase().trim() === key)
+    if (exist) {
+      // 已存在：累加出现次数 + 更新日期（computed 会基于 count 重新算 dateCount）
+      exist.count = (exist.count || 1) + (it.count || 1)
+      if (it.date) exist.date = it.date
+      bumped++
+    } else {
+      manualVocab.value.push({
+        item: it.item,
+        meaning: it.meaning || '',
+        type: 'word',
+        category: 'WordChase导入',
+        level: it.level || '考研',
+        date: it.date || new Date().toISOString().slice(0, 10),
+        count: it.count || 1, // 需改点3配合：vocabPool computed 不覆盖 count
+      })
+      added++
+    }
+  }
+  syncData()
+  return { added, bumped }
+}
+
+// 生词池反向导出给 WordChase（格式B：word-chase-vocab，增量）
+function exportVocabForWordChase() {
+  const items = vocabPool.value.map(v => ({
+    item: v.item, meaning: v.meaning || '',
+    level: v.level || '考研', count: v.count || 1,
+    dateCount: v.dateCount || 1, date: v.date || '',
+  }))
+  const json = JSON.stringify({ type: 'word-chase-vocab', version: 1, action: 'merge', items }, null, 2)
+  const fileName = `ett-vocab-${new Date().toISOString().slice(0, 10)}.json`
+  if (isMobile.value) {
+    Filesystem.writeFile({ path: fileName, data: json, directory: Directory.Documents })
+      .then(() => ElMessage.success(`生词池已导出: ${fileName}`))
+      .catch(() => { ElMessage.error('导出失败，请检查存储权限') })
+    return
+  }
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(`生词池已导出 ${items.length} 词（WordChase格式）`)
+}
+
 // ========== 窗口AI模式 ==========
 function buildScoringPrompt() {
   const essay = currentEssay.value
@@ -2869,6 +2921,14 @@ function importData(file) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result)
+      // 识别 WordChase 生词池导入（格式B：word-chase-vocab，增量合并非覆盖）
+      if (data.type === 'word-chase-vocab' || (Array.isArray(data.items) && data.items[0]?.item !== undefined)) {
+        const items = Array.isArray(data.items) ? data.items : []
+        if (!items.length) { ElMessage.warning('未识别到生词条目'); return }
+        const merged = mergeVocabFromImport(items)
+        ElMessage.success(`生词池增量导入：新增 ${merged.added} 个，累加 ${merged.bumped} 个`)
+        return
+      }
       // 自动识别：如果顶层有 pairs 且元素含 en/zh → 当作单组短语卡片导入
       if (data.pairs && Array.isArray(data.pairs) && data.pairs.length && data.pairs[0].en !== undefined && data.pairs[0].zh !== undefined) {
         const newId = generateId()
