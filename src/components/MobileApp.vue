@@ -276,6 +276,7 @@
         <div class="mob-mine-item" @click="$.showPhrasePracticeDialog = true">
           <span style="font-size:calc(22px * var(--ett-fs, 1))">✍️</span>
           <span style="font-size:calc(10px * var(--ett-fs, 1));color:#bbb">短语默写</span>
+          <span v-if="$.phrasePracticeQueue?.length" class="mob-queue-badge">待打包 {{ $.phrasePracticeQueue.length }}</span>
         </div>
         <div class="mob-mine-item" @click="$.openHistoryPanel($.currentEssayId)">
           <span style="font-size:calc(22px * var(--ett-fs, 1))">🕐</span>
@@ -1019,7 +1020,12 @@ watch(() => $.currentEssayId, () => {
 .mob-mine-item {
   background: #2d2d3f; border-radius: 16px; aspect-ratio: 1;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px; cursor: pointer;
+  gap: 6px; cursor: pointer; position: relative;
+}
+.mob-queue-badge {
+  position: absolute; top: 4px; right: 4px; background: #ff5f00; color: #fff;
+  font-size: 10px; border-radius: 8px; padding: 1px 6px; line-height: 1.5;
+  max-width: calc(100% - 8px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .mob-settings {

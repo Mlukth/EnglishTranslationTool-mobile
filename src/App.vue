@@ -739,6 +739,7 @@
           </div>
           <!-- 复习开关 -->
           <div class="mob-phrase-filter-bar">
+            <el-button v-if="phrasePracticeQueue.length" size="small" type="warning" @click="openPhraseQueueDialog" style="margin-right:auto;padding:4px 8px">🗂 待打包 {{ phrasePracticeQueue.length }}</el-button>
             <span style="font-size:calc(10px*var(--ett-fs,1));color:#888">{{ phraseFilterReview ? '📝 需复习' : '📚 全部' }}</span>
             <el-switch v-model="phraseFilterReview" size="small" />
           </div>
@@ -751,8 +752,8 @@
           <div v-if="displayPhrasePairs.length" class="mob-phrase-card" :class="{ revealed: phraseRevealAnswer }">
             <div class="mob-phrase-zh">{{ displayPhrasePairs[phraseCurrentIdx]?.zh }}</div>
             <div v-if="isWordListPhrase" class="mob-phrase-wordmap" @click="onWordClick">
-              <span class="mob-phrase-wordmap-label">📝 待掌握词汇：</span>
-              <span v-for="(w, wi) in phraseWordItems" :key="wi" class="mob-phrase-wordmap-item">{{ w }}<span v-if="wi < phraseWordItems.length - 1" style="color:#555"> · </span></span>
+              <span class="mob-phrase-wordmap-label">📝 中文提示（看中文默写英文）：</span>
+              <span v-for="(h, hi) in phraseWordHints" :key="hi" class="mob-phrase-wordmap-item">{{ h }}<span v-if="hi < phraseWordHints.length - 1" style="color:#555"> · </span></span>
             </div>
             <div class="mob-phrase-input-area">
               <div class="mob-phrase-label">你的英文：</div>
@@ -764,6 +765,7 @@
               <div class="mob-phrase-original" @click="onWordClick">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
             </div>
             <div class="mob-phrase-btns" v-if="phraseRevealAnswer">
+              <el-button type="warning" plain size="small" @click="addCurrentPhraseToQueue" style="flex:1">加入翻译练习</el-button>
               <el-button type="danger" plain size="small" @click="phraseMarkReview" style="flex:1">需复习</el-button>
               <el-button type="success" size="small" @click="phraseMarkCorrect" style="flex:1">正确</el-button>
             </div>
@@ -785,7 +787,14 @@
       <div v-if="!phraseCards.length" style="text-align:center;padding:40px;color:#777">
         <p>暂无短语卡片组，请先通过「图片导入 → 反转短语·中留英填」导入</p>
       </div>
-      <div v-else class="phrase-practice-layout">
+      <template v-else>
+        <div class="phrase-queue-toolbar">
+          <span style="font-size:12px;color:#888">🔖 在卡片上点「加入翻译练习」可跨分组收集短语，攒够后一键打包成一组翻译练习</span>
+          <el-button size="small" type="warning" @click="openPhraseQueueDialog">
+            🗂 待打包队列 ({{ phrasePracticeQueue.length }})
+          </el-button>
+        </div>
+        <div class="phrase-practice-layout">
         <div class="phrase-set-list">
           <div class="phrase-set-label">
             卡片组 ({{ phraseCards.length }})
@@ -820,20 +829,21 @@
           <div v-else class="phrase-card" :class="{ revealed: phraseRevealAnswer }">
             <div class="phrase-zh-display">{{ displayPhrasePairs[phraseCurrentIdx]?.zh }}</div>
             <div v-if="isWordListPhrase" class="phrase-wordmap" @click="onWordClick">
-              <span class="phrase-wordmap-label">📝 待掌握词汇：</span>
-              <span v-for="(w, wi) in phraseWordItems" :key="wi" class="phrase-wordmap-item">{{ w }}<span v-if="wi < phraseWordItems.length - 1" style="color:#999"> · </span></span>
+              <span class="phrase-wordmap-label">📝 中文提示（看中文默写英文）：</span>
+              <span v-for="(h, hi) in phraseWordHints" :key="hi" class="phrase-wordmap-item">{{ h }}<span v-if="hi < phraseWordHints.length - 1" style="color:#999"> · </span></span>
             </div>
             <el-divider />
             <div class="phrase-en-area">
               <div class="phrase-en-label">你的英文：</div>
               <el-input v-model="phraseUserAnswer" type="textarea" :rows="3" resize="vertical"
-                placeholder="根据中文写出英文..." @keyup.enter.exact="phraseRevealAnswer ? phraseMarkReview() : revealPhraseAnswer()" />
+                placeholder="根据中文提示写出英文..." @keyup.enter.exact="phraseRevealAnswer ? phraseMarkReview() : revealPhraseAnswer()" />
             </div>
             <div class="phrase-answer-reveal" v-if="phraseRevealAnswer">
               <div class="phrase-en-label">原文：</div>
               <div class="phrase-en-original" @click="onWordClick">{{ displayPhrasePairs[phraseCurrentIdx]?.en }}</div>
             </div>
             <div class="phrase-actions" v-if="phraseRevealAnswer">
+              <el-button type="warning" plain size="small" @click="addCurrentPhraseToQueue">➕ 加入翻译练习</el-button>
               <el-button type="danger" plain size="small" @click="phraseMarkReview">需复习</el-button>
               <el-button type="success" size="small" @click="phraseMarkCorrect">正确</el-button>
             </div>
@@ -850,8 +860,40 @@
           <el-empty description="请从左侧选择一个卡片组开始练习" :image-size="80" />
         </div>
       </div>
+      </template>
       <template #footer>
         <el-button @click="showPhrasePracticeDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 待打包翻译练习队列弹窗（跨分组收集，手动打包成翻译练习组） -->
+    <el-dialog v-model="showPhraseQueueDialog" :title="`🗂 待打包翻译练习队列（${phrasePracticeQueue.length}）`" :width="isMobile ? '94%' : '640px'" destroy-on-close :modal-class="'ett-queue-overlay'">
+      <template v-if="phrasePracticeQueue.length">
+        <div class="phrase-queue-toolbar" style="margin:0 0 8px 0">
+          <el-button size="small" @click="togglePhraseQueueAll">{{ phraseQueueSelected.length === phrasePracticeQueue.length ? '取消全选' : '全选' }}</el-button>
+          <el-button size="small" type="danger" plain @click="clearPhraseQueue">清空队列</el-button>
+          <span style="font-size:12px;color:#888;margin-left:auto">已选 {{ phraseQueueSelected.length }}/{{ phrasePracticeQueue.length }} · 支持多组混合打包</span>
+        </div>
+        <div class="phrase-queue-list">
+          <div v-for="q in phrasePracticeQueue" :key="q.id" class="phrase-queue-item">
+            <el-checkbox :model-value="phraseQueueSelected.includes(q.id)" @change="togglePhraseQueueItem(q.id)" />
+            <div class="phrase-queue-body">
+              <div class="phrase-queue-zh">{{ q.zh }}</div>
+              <div class="phrase-queue-en">{{ q.en }}</div>
+              <div class="phrase-queue-meta">来自「{{ q.fromSetTitle }}」{{ q.addedAt ? ' · ' + new Date(q.addedAt).toLocaleString() : '' }}</div>
+            </div>
+            <el-button size="small" text type="danger" @click="removeFromPhraseQueue(q.id)">移除</el-button>
+          </div>
+        </div>
+        <div class="phrase-queue-title-row">
+          <span class="phrase-queue-title-label">新组标题：</span>
+          <el-input v-model="phraseQueueTitle" size="small" style="flex:1" placeholder="短语打包·MM-DD" />
+        </div>
+      </template>
+      <el-empty v-else description="队列为空，去短语默写卡片上点「加入翻译练习」收集短语" :image-size="70" />
+      <template #footer>
+        <el-button @click="showPhraseQueueDialog = false">关闭</el-button>
+        <el-button type="warning" @click="packageQueueToEssay" :disabled="!phraseQueueSelected.length">打包成翻译练习</el-button>
       </template>
     </el-dialog>
 
@@ -931,7 +973,7 @@
 </template>
 
 <script setup>
-import { REVERSE_SCORING_PROMPT, SEGMENT_PROMPT, SCORING_SYSTEM_PROMPT, IMAGE_IMPORT_PROMPT_PHRASE, IMAGE_IMPORT_PROMPT_REFERENCE, IMAGE_IMPORT_DEFAULT_PROMPT } from './prompts/defaults.js'
+import { REVERSE_SCORING_PROMPT, SEGMENT_PROMPT, SCORING_SYSTEM_PROMPT, WAVE_SYSTEM_PROMPT, IMAGE_IMPORT_PROMPT_PHRASE, IMAGE_IMPORT_PROMPT_REFERENCE, IMAGE_IMPORT_DEFAULT_PROMPT } from './prompts/defaults.js'
 import { ref, reactive, computed, watch, onMounted, nextTick, h, provide } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, CopyDocument, Link, VideoPlay, ArrowLeft, Loading, Search } from '@element-plus/icons-vue'
@@ -1026,6 +1068,11 @@ const phraseUserAnswer = ref('')
 const phraseRevealAnswer = ref(false)
 const phraseFilterReview = ref(false)
 const phraseShowSetList = ref(true)
+// 待打包翻译练习队列（跨分组收集短语，手动打包成翻译练习组）
+const phrasePracticeQueue = ref([]) // [{id, zh, en, hints, fromSetId, fromSetTitle, fromSetSource, addedAt}]
+const showPhraseQueueDialog = ref(false)
+const phraseQueueSelected = ref([]) // 打包弹窗中勾选的队列项 id
+const phraseQueueTitle = ref('')    // 打包后新组标题
 
 // 短语默写 computed
 const phraseSelectedSet = computed(() => phraseCards.value.find(c => c.id === phraseSelectedSetId.value) || null)
@@ -1056,6 +1103,37 @@ const phraseWordItems = computed(() => {
   if (!isWordListPhrase.value) return []
   const en = (currentPhrasePair.value.en || '').trim()
   return en.split('/').map(s => s.trim()).filter(Boolean)
+})
+
+// 单词列表型短语的中文提示（看中文默写英文，不直接展示英文词）
+const phraseWordHints = computed(() => {
+  if (!isWordListPhrase.value) return []
+  const pair = currentPhrasePair.value
+  const enWords = phraseWordItems.value
+  // 优先使用显式 hints 字段
+  if (pair.hints && Array.isArray(pair.hints) && pair.hints.length) {
+    const hints = []
+    for (let i = 0; i < enWords.length; i++) {
+      hints.push(pair.hints[i] || `词${i + 1}`)
+    }
+    return hints
+  }
+  // 尝试从 zh 字段提取中文提示
+  const zh = (pair.zh || '').trim()
+  // 去掉括号注释部分（如"（原词：shown）"）
+  const zhClean = zh.replace(/[（(][^)）]{0,30}[）)]/g, '').trim()
+  // 尝试按中文标点拆分
+  const zhParts = zhClean.split(/[、，,，]/).map(s => s.trim()).filter(Boolean)
+  // 如果拆分后有足够多的片段，用作提示
+  if (zhParts.length >= Math.min(3, enWords.length)) {
+    const hints = []
+    for (let i = 0; i < enWords.length; i++) {
+      hints.push(zhParts[i] || `词${i + 1}`)
+    }
+    return hints
+  }
+  // 回退：编号占位，不暴露英文
+  return enWords.map((_, i) => `词${i + 1}`)
 })
 
 // 短语默写方法
@@ -1138,6 +1216,80 @@ function deletePhraseSet(id) {
   }
   syncData()
   ElMessage.success('卡片组已删除')
+}
+
+// ========== 待打包翻译练习队列（跨分组收集短语，手动打包） ==========
+function addCurrentPhraseToQueue() {
+  const set = phraseSelectedSet.value
+  const p = currentPhrasePair.value
+  if (!set || !p) return
+  const key = (p.en || '') + '|||' + (p.zh || '')
+  if (phrasePracticeQueue.value.some(q => (q.en || '') + '|||' + (q.zh || '') === key)) {
+    ElMessage.info('该短语已在待打包队列中')
+    return
+  }
+  phrasePracticeQueue.value.push({
+    id: generateId(),
+    zh: p.zh,
+    en: p.en,
+    hints: p.hints || [],
+    fromSetId: set.id,
+    fromSetTitle: set.title,
+    fromSetSource: set.source || '',
+    addedAt: Date.now()
+  })
+  flushSave()
+  ElMessage.success('已加入待打包队列，可稍后在「待打包队列」打包成翻译练习')
+}
+function openPhraseQueueDialog() {
+  phraseQueueSelected.value = phrasePracticeQueue.value.map(q => q.id)
+  phraseQueueTitle.value = '短语打包·' + new Date().toISOString().slice(5, 10)
+  showPhraseQueueDialog.value = true
+}
+function togglePhraseQueueItem(id) {
+  if (phraseQueueSelected.value.includes(id)) phraseQueueSelected.value = phraseQueueSelected.value.filter(x => x !== id)
+  else phraseQueueSelected.value.push(id)
+}
+function togglePhraseQueueAll() {
+  phraseQueueSelected.value = phraseQueueSelected.value.length === phrasePracticeQueue.value.length
+    ? [] : phrasePracticeQueue.value.map(q => q.id)
+}
+function removeFromPhraseQueue(id) {
+  phrasePracticeQueue.value = phrasePracticeQueue.value.filter(q => q.id !== id)
+  phraseQueueSelected.value = phraseQueueSelected.value.filter(x => x !== id)
+  flushSave()
+}
+function clearPhraseQueue() {
+  phrasePracticeQueue.value = []
+  phraseQueueSelected.value = []
+  flushSave()
+}
+function packageQueueToEssay() {
+  const items = phrasePracticeQueue.value.filter(q => phraseQueueSelected.value.includes(q.id))
+  if (!items.length) { ElMessage.warning('请先勾选要打包的短语'); return }
+  const title = phraseQueueTitle.value.trim() || ('短语打包·' + new Date().toISOString().slice(5, 10))
+  const fromSets = [...new Set(items.map(i => i.fromSetTitle).filter(Boolean))]
+  const essay = {
+    id: generateId(),
+    date: new Date().toISOString().slice(0, 10),
+    title,
+    source: '短语默写打包',
+    originalEN: items.map(i => i.en).join('\n\n'),
+    referenceTranslation: items.map(i => i.zh).join('\n\n'),
+    segments: items.map(i => ({ en: i.en, contextZH: '', keyPoints: [], zh: i.zh, hints: i.hints || [] })),
+    phrasePackMeta: { fromSets, addedAt: Date.now() }
+  }
+  essays.value.push(essay)
+  phrasePracticeQueue.value = phrasePracticeQueue.value.filter(q => !phraseQueueSelected.value.includes(q.id))
+  phraseQueueSelected.value = []
+  sortEssays()
+  flushSave()
+  showPhraseQueueDialog.value = false
+  showPhrasePracticeDialog.value = false
+  phraseRevealAnswer.value = false
+  phraseUserAnswer.value = ''
+  currentEssayId.value = essay.id
+  ElMessage.success(`已打包「${title}」：${items.length}条短语${fromSets.length ? '（来自' + fromSets.length + '组）' : ''}，已加入翻译练习`)
 }
 
 // 图片导入
@@ -1961,6 +2113,7 @@ function syncData() {
         manualVocab: manualVocab.value,
         wordRoots: wordRootsStore,
         phraseCards: phraseCards.value,
+        phrasePracticeQueue: phrasePracticeQueue.value,
         starredItems: Object.assign({}, starredItems),
         translationDrafts: Object.assign({}, translationDrafts),
         timerStates: Object.assign({}, timerStates),
@@ -2007,6 +2160,7 @@ async function flushSave() {
     manualVocab: manualVocab.value,
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
+    phrasePracticeQueue: phrasePracticeQueue.value,
     starredItems: Object.assign({}, starredItems),
     translationDrafts: Object.assign({}, translationDrafts),
     timerStates: Object.assign({}, timerStates),
@@ -2067,6 +2221,7 @@ function restoreBackupData(data) {
   if (data.manualVocab) manualVocab.value = data.manualVocab
   if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots) }
   if (data.phraseCards) phraseCards.value = data.phraseCards
+  if (data.phrasePracticeQueue) phrasePracticeQueue.value = data.phrasePracticeQueue
   if (data.starredItems) Object.assign(starredItems, data.starredItems)
   if (data.translationDrafts) Object.assign(translationDrafts, data.translationDrafts)
   if (data.timerStates) Object.assign(timerStates, data.timerStates)
@@ -2609,6 +2764,7 @@ function buildBackupJSON() {
     manualVocab: manualVocab.value,
     wordRoots: wordRootsStore,
     phraseCards: phraseCards.value,
+    phrasePracticeQueue: phrasePracticeQueue.value,
     starredItems: Object.assign({}, starredItems),
     exportVersion: 6,
     savedAt: Date.now()
@@ -2689,6 +2845,7 @@ function autoExportOnLoad() {
         essayOrder: essayOrder.value,
         manualVocab: manualVocab.value,
         phraseCards: phraseCards.value,
+        phrasePracticeQueue: phrasePracticeQueue.value,
         exportVersion: 6,
         savedAt: Date.now()
       }
@@ -2721,7 +2878,7 @@ function importData(file) {
           source: data.source || '',
           date: data.date || new Date().toISOString().slice(0, 10),
           sourceNote: data.sourceNote || '',
-          pairs: data.pairs.map(p => ({ en: p.en, zh: p.zh })),
+          pairs: data.pairs.map(p => ({ en: p.en, zh: p.zh, ...(p.hints ? { hints: p.hints } : {}) })),
           practiceState: {}
         })
         syncData()
@@ -2743,7 +2900,7 @@ function importData(file) {
             source: item.source || '',
             date: item.date || new Date().toISOString().slice(0, 10),
             sourceNote: item.sourceNote || '',
-            pairs: item.pairs.map(p => ({ en: p.en, zh: p.zh })),
+            pairs: item.pairs.map(p => ({ en: p.en, zh: p.zh, ...(p.hints ? { hints: p.hints } : {}) })),
             practiceState: {}
           })
           imported += item.pairs.length
@@ -2762,7 +2919,7 @@ function importData(file) {
           source: '',
           date: new Date().toISOString().slice(0, 10),
           sourceNote: '',
-          pairs: data.map(p => ({ en: p.en, zh: p.zh })),
+          pairs: data.map(p => ({ en: p.en, zh: p.zh, ...(p.hints ? { hints: p.hints } : {}) })),
           practiceState: {}
         })
         syncData()
@@ -2783,6 +2940,7 @@ function importData(file) {
       if (data.manualVocab) { manualVocab.value = data.manualVocab; importedSomething = true }
       if (data.wordRoots) { Object.assign(wordRootsStore, data.wordRoots); Object.assign(wordAnalysisCache, data.wordRoots); importedSomething = true }
       if (data.phraseCards) { phraseCards.value = data.phraseCards; importedSomething = true }
+      if (data.phrasePracticeQueue) { phrasePracticeQueue.value = data.phrasePracticeQueue; importedSomething = true }
       if (data.starredItems) { Object.assign(starredItems, data.starredItems); importedSomething = true }
       if (data.promptConfig) {
         if (data.promptConfig.scoringPrompt) promptConfig.value.scoringPrompt = data.promptConfig.scoringPrompt
@@ -3101,11 +3259,21 @@ async function copyImagePrompt() {
   }
 }
 
+// 检测 JSON 是否为反转短语格式（{pairs:[...]} 或裸 [{en,zh}] 数组），用于导入按钮智能路由
+function isPhraseFormatJson(parsed) {
+  const probe = Array.isArray(parsed) ? parsed[0] : parsed
+  if (!probe || probe.originalEN) return false
+  if (probe.pairs?.length) return true
+  return probe.en !== undefined && probe.zh !== undefined
+}
+
 function importFromImageJson() {
   if (!imageImportResult.value.trim()) { ElMessage.warning('请粘贴AI返回的JSON'); return }
   try {
     const parsed = extractJSON(imageImportResult.value)
     if (!parsed) throw new Error('未识别到JSON')
+    // 反转短语格式（无originalEN、只有pairs）自动转短语导入，避免点错按钮报"缺originalEN"
+    if (isPhraseFormatJson(parsed)) { importPhraseFromImageJson(); return }
     if (!parsed.originalEN) throw new Error('JSON缺少originalEN字段')
 
     essays.value.push({
@@ -3137,6 +3305,8 @@ function importBatchFromImageJson() {
     // Try array first, then single object
     let items = extractJSON(imageImportResult.value)
     if (!items) throw new Error('未识别到JSON')
+    // 反转短语格式自动转短语导入
+    if (isPhraseFormatJson(items)) { importPhraseFromImageJson(); return }
     if (!Array.isArray(items)) items = [items]
 
     let imported = 0
@@ -3173,6 +3343,13 @@ function importPhraseFromImageJson() {
   try {
     let parsed = extractJSON(imageImportResult.value)
     if (!parsed) throw new Error('未识别到JSON')
+    // 文章格式（有originalEN、无pairs）自动转文章导入，反向兜底
+    const probe = Array.isArray(parsed) ? parsed[0] : parsed
+    if (probe?.originalEN && !probe?.pairs) {
+      if (Array.isArray(parsed)) importBatchFromImageJson()
+      else importFromImageJson()
+      return
+    }
     // Support both single object and array
     let items = Array.isArray(parsed) ? parsed : [parsed]
     // 检测是否为裸 [{en,zh}] 数组（AI 常直接返回这个格式）
@@ -3184,7 +3361,7 @@ function importPhraseFromImageJson() {
         source: '图片导入',
         date: new Date().toISOString().slice(0, 10),
         sourceNote: '',
-        pairs: items.map(p => ({ en: p.en, zh: p.zh })),
+        pairs: items.map(p => ({ en: p.en, zh: p.zh, ...(p.hints ? { hints: p.hints } : {}) })),
         practiceState: {}
       })
       flushSave()
@@ -3207,7 +3384,7 @@ function importPhraseFromImageJson() {
         source: item.source || '图片导入',
         date: item.date || new Date().toISOString().slice(0, 10),
         sourceNote: item.sourceNote || '',
-        pairs: item.pairs.map(p => ({ en: p.en, zh: p.zh })),
+        pairs: item.pairs.map(p => ({ en: p.en, zh: p.zh, ...(p.hints ? { hints: p.hints } : {}) })),
         practiceState: {}
       })
       imported += item.pairs.length
@@ -3347,6 +3524,8 @@ function importAllBatch() {
   try {
     let items = extractJSON(imageImportResult.value)
     if (!items) throw new Error('未识别到JSON')
+    // 反转短语格式自动转短语导入
+    if (isPhraseFormatJson(items)) { importPhraseFromImageJson(); return }
     if (!Array.isArray(items)) {
       if (items.originalEN) items = [items]
       else throw new Error('请粘贴JSON数组 [{...},{...}]')
@@ -3659,6 +3838,7 @@ const ett = reactive({
   darkMode, isMobile, fontSize, apiKey, scoringMode, selectedSeg,
   waveSelectedIdx, waveAnswer, reverseUserTranslation, windowAIInput,
   showAddDialog, showPromptConfig, showVocabPoolDialog, showPhrasePracticeDialog, showWordAnalysis,
+  phrasePracticeQueue, showPhraseQueueDialog, openPhraseQueueDialog, packageQueueToEssay,
   // computed
   get currentEssay() { return essays.value.find(e => e.id === currentEssayId.value) },
   get rightPanelRecord() {
@@ -4019,6 +4199,18 @@ onMounted(async () => {
 .phrase-en-original { font-size:16px; line-height:1.6; color:#4a4; font-weight:600; }
 .phrase-actions { display:flex; gap:8px; margin-top:12px; justify-content:center; }
 .phrase-nav { display:flex; gap:8px; justify-content:center; margin-top:12px; }
+/* 待打包翻译练习队列 */
+.phrase-queue-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+.phrase-queue-list { max-height:320px; overflow-y:auto; border:1px solid #1e1e1e; border-radius:8px; padding:4px; }
+.phrase-queue-item { display:flex; align-items:center; gap:8px; padding:8px 6px; border-radius:6px; }
+.phrase-queue-item + .phrase-queue-item { border-top:1px dashed #1e1e1e; }
+.phrase-queue-item:hover { background:#141414; }
+.phrase-queue-body { flex:1; min-width:0; }
+.phrase-queue-zh { font-size:13px; color:#f8fafc; word-break:break-word; }
+.phrase-queue-en { font-size:13px; color:#4a4; font-weight:600; word-break:break-word; margin-top:2px; }
+.phrase-queue-meta { font-size:11px; color:#777; margin-top:2px; }
+.phrase-queue-title-row { display:flex; align-items:center; gap:8px; margin-top:10px; }
+.phrase-queue-title-label { font-size:13px; color:#555; white-space:nowrap; }
 
 /* Light mode for phrase practice */
 .ett-body:not(.dark) .phrase-set-list { border-right-color:#eee; }
@@ -4031,6 +4223,13 @@ onMounted(async () => {
 .ett-body:not(.dark) .phrase-en-original { color:#2d6a4f; }
 .ett-body:not(.dark) .phrase-answer-reveal { background:#f0fff0; border-color:#d4edda; }
 .ett-body:not(.dark) .phrase-practice-title { color:#333; }
+.ett-body:not(.dark) .phrase-queue-list { border-color:#eee; }
+.ett-body:not(.dark) .phrase-queue-item:hover { background:#f8f9fa; }
+.ett-body:not(.dark) .phrase-queue-item + .phrase-queue-item { border-top-color:#eee; }
+.ett-body:not(.dark) .phrase-queue-zh { color:#333; }
+.ett-body:not(.dark) .phrase-queue-en { color:#2d6a4f; }
+.ett-body:not(.dark) .phrase-queue-meta { color:#999; }
+.ett-body:not(.dark) .phrase-queue-title-label { color:#666; }
 
 /* ========== 手机端适配 ========== */
 @media (max-width:768px) {
@@ -4393,6 +4592,8 @@ mark { background:#3a1000; color:#ff5f00; padding:0 2px; border-radius:2px; }
 
 <!-- 全局暗色弹窗 + 抽屉（非scoped，teleport到body后脱离组件树） -->
 <style>
+/* 移动端全屏短语默写 overlay 是 z-index:3000；队列弹窗遮罩（teleport 到 body，scoped 样式够不着）必须压过它才能点击 */
+.ett-queue-overlay { z-index: 3100 !important; }
 html.ett-dark .el-dialog { --el-dialog-bg-color: #0d0d0d; background: #0d0d0d; border: 1px solid #1e1e1e; }
 html.ett-dark .el-dialog__header { border-bottom: 1px solid #1e1e1e; }
 html.ett-dark .el-dialog__title { color: #f8fafc; }

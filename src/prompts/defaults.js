@@ -88,10 +88,13 @@ const IMAGE_IMPORT_PROMPT_PHRASE = `请分析这张考研英语教辅截图（�
   "date": "YYYY-MM-DD（如无法确定填当前日期）",
   "sourceNote": "用一句话说明截图资料类型（如'被替换词→替换词升级表''待选句式+中文翻译'等）",
   "pairs": [
-    {"en": "用户需要写出的英文", "zh": "帮用户回忆起这个英文的中文提示"},
-    {"en": "英文表达2", "zh": "中文提示2"}
+    {"en": "用户需要写出的英文", "zh": "帮用户回忆起这个英文的中文提示", "hints": ["词1中文提示", "词2中文提示"]},
+    {"en": "英文表达2", "zh": "中文提示2", "hints": ["中文提示"]}
   ]
 }
+
+【hints 字段说明】
+当 en 包含多个用 / 分隔的同义/近义英文表达时（如 "shown / illustrated / depicted"），hints 数组为每个英文词提供对应的简短中文提示（如 ["展示", "描绘", "描写"]），让用户看着中文默写英文。hints 数量应与 / 分隔的词数一致。如果 en 是完整句子而非单词列表，hints 可省略。
 
 【zh 字段的核心铁律】
 zh 必须是用户读完后就知道要写什么英文的自然中文。以下是正确与错误的写法对比：
@@ -202,8 +205,16 @@ const SCORING_SYSTEM_PROMPT = `你是考研英语一翻译题的资深评分老�
 }
 
 【字段说明】
-- mistakeWaves：对feedback中逐句指出的每一个结构性错误（如语序混乱、修饰位置错、搭配断裂、否定漏译等），各生成一条水波分析。sentenceIndex从0开始，对应第几句。errorType用中文标签概括错误类型。studentError摘录学生错译原文。如果某句没有结构性错误则跳过该句。如果整篇没有结构性错误，返回空数组[]。
-- translationErrors：逐条列出学生译文中的词汇/短语翻译错误。originalEN是原文单词/短语，correctZH是正确翻译，studentZH是学生错译成什么，note用一句话提示为什么容易错。词汇性错误与结构性错误分开——这里的错误是因为不认识单词、选错词义、望文生义，不是因为看不懂句子结构。如果全部翻译正确，返回空数组[]。
+- mistakeWaves：对feedback中逐句指出的每一个结构性错误（如语序混乱、修饰位置错、搭配断裂、否定漏译等），各生成一条水波分析。sentenceIndex从0开始，对应第几句。errorType用中文标签概括错误类型。studentError摘录学生错译原文。
+
+  ⚠️ 关键：studentError、whereStuck、nextTime 三字段必须逻辑自洽！如果错误本质是"语序欧化/不符合汉语习惯"（如形式主语It is...that直接顺译成"...是...的"），studentError应如实摘录学生译文，但 whereStuck 必须解释"学生其实看懂了意思，只是没调整语序"，nextTime 必须给出调整语序的具体步骤。不要把语序问题说成理解错误——学生不是没看懂，是不懂怎么把看懂的意思用地道中文说出来。
+
+  如果某句没有结构性错误则跳过该句。如果整篇没有结构性错误，返回空数组[]。
+- translationErrors：逐条列出学生译文中的词汇/短语翻译错误。originalEN是原文单词/短语，correctZH是正确翻译，studentZH是学生错译成什么，note用一句话提示为什么容易错。词汇性错误与结构性错误分开——这里的错误是因为不认识单词、选错词义、望文生义，不是因为看不懂句子结构。
+
+  ⚠️ 不要把同一处错误同时放进 mistakeWaves 和 translationErrors。语序/结构问题 → mistakeWaves；单词/词义问题 → translationErrors。一个错误只归入一处。
+
+  如果全部翻译正确，返回空数组[]。
 - unknownItems：同上，提取所有翻错或不认识的单词短语喂养生词池。每个词标注category和level。如果全部正确返回空数组[]。
 - errorSpans：精确摘录学生译文中翻译有误的中文字词片段（不是整句），用于前端标红显示。每个片段尽量控制在2-6个字，定位到具体的错误词或短语。如果无法精确定位到片段，返回空数组[]。`;
 
@@ -288,7 +299,11 @@ const REVERSE_SCORING_PROMPT = `你是考研英语翻译题的资深评分老师
 }
 
 【字段说明】
-- mistakeWaves：对feedback中逐句指出的每一个结构性/表达性错误，各生成一条水波分析。sentenceIndex从0开始。errorType用中文标签。如果整篇没有明显错误，返回空数组[]。
+- mistakeWaves：对feedback中逐句指出的每一个结构性/表达性错误，各生成一条水波分析。sentenceIndex从0开始。errorType用中文标签。
+
+  ⚠️ studentError、whereStuck、nextTime 三字段必须逻辑自洽！不要把语序/表达习惯问题说成理解错误。同一处错误不要同时放入 mistakeWaves 和 translationErrors。
+
+  如果整篇没有明显错误，返回空数组[]。
 - translationErrors：逐条列出词汇/短语层面的翻译错误，给出正确vs错误的对照。词汇性错误与结构性错误分开。没有则返回空数组[]。
 - unknownItems：同上，提取所有用错或不地道的单词短语。没有则返回空数组[]。
 - errorSpans：精确摘录学生英译中有误的英文片段（不是整句），每个片段尽量控制在2-5个单词，用于前端标红显示。如果无法精确定位，返回空数组[]。`;
@@ -297,6 +312,7 @@ export {
   REVERSE_SCORING_PROMPT,
   SEGMENT_PROMPT,
   SCORING_SYSTEM_PROMPT,
+  WAVE_SYSTEM_PROMPT,
   IMAGE_IMPORT_PROMPT_PHRASE,
   IMAGE_IMPORT_PROMPT_REFERENCE,
   IMAGE_IMPORT_DEFAULT_PROMPT

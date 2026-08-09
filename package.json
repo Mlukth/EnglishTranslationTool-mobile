@@ -1,7 +1,7 @@
 {
   "name": "english-translation-tool-mobile",
   "private": true,
-  "version": "1.0.20260708-1230",
+  "version": "1.0.20260809-1318",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
