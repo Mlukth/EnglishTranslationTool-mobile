@@ -981,7 +981,11 @@ import { Setting, CopyDocument, Link, VideoPlay, ArrowLeft, Loading, Search } fr
 import * as echarts from 'echarts'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { App } from '@capacitor/app'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 import MobileApp from './components/MobileApp.vue'
+
+// 自定义原生插件：SAF 保存到任意位置（flow-timer 同款，Android ACTION_CREATE_DOCUMENT）
+const SaveFile = Capacitor.isNativePlatform() ? registerPlugin('SaveFile') : null
 
 // ========== 数据状态 ==========
 const apiKey = ref(localStorage.getItem('ett_apikey') || '')
@@ -2459,7 +2463,7 @@ function mergeVocabFromImport(items) {
 }
 
 // 生词池反向导出给 WordChase（格式B：word-chase-vocab，增量）
-function exportVocabForWordChase() {
+async function exportVocabForWordChase() {
   const items = vocabPool.value.map(v => ({
     item: v.item, meaning: v.meaning || '',
     level: v.level || '考研', count: v.count || 1,
@@ -2467,17 +2471,7 @@ function exportVocabForWordChase() {
   }))
   const json = JSON.stringify({ type: 'word-chase-vocab', version: 1, action: 'merge', items }, null, 2)
   const fileName = `ett-vocab-${new Date().toISOString().slice(0, 10)}.json`
-  if (isMobile.value) {
-    Filesystem.writeFile({ path: fileName, data: json, directory: Directory.Documents })
-      .then(() => ElMessage.success(`生词池已导出: ${fileName}`))
-      .catch(() => { ElMessage.error('导出失败，请检查存储权限') })
-    return
-  }
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success(`生词池已导出 ${items.length} 词（WordChase格式）`)
+  await saveFileWithPicker(json, fileName, `生词池已导出 ${items.length} 词（WordChase格式）`)
 }
 
 // ========== 窗口AI模式 ==========
@@ -2823,36 +2817,40 @@ function buildBackupJSON() {
   }
 }
 
+// 保存 JSON 到用户自定义位置（flow-timer 同款方案）
+// - APK 原生平台：SaveFile 插件弹系统"保存到"对话框，用户手选路径（下载/文档/SD卡）
+// - 桌面浏览器：Blob 下载
+// 返回 true=成功，false=失败或取消
+async function saveFileWithPicker(json, fileName, successMsg) {
+  const blob = new Blob([json], { type: 'application/json' })
+  if (SaveFile) {
+    try {
+      const res = await SaveFile.saveFile({ data: json, filename: fileName })
+      const bytes = res?.readBack ?? res?.bytes ?? json.length
+      if (bytes <= 0) {
+        ElMessage.error('保存失败：文件写入后读回为 0 字节')
+        return false
+      }
+      ElMessage.success((successMsg || '已保存') + `（${res?.displayName || fileName}，${kb(bytes)}，已校验）`)
+      return true
+    } catch (e) {
+      if (e?.message === 'cancelled') return false // 用户取消，静默返回
+      ElMessage.error(`保存失败：${e?.message || e}`)
+      return false
+    }
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(successMsg || '数据已导出')
+  return true
+}
+function kb(n) { return n > 1024 ? (n / 1024).toFixed(1) + 'KB' : n + 'B' }
+
 async function exportData() {
   const json = JSON.stringify(buildBackupJSON(), null, 2)
   const fileName = `ett-backup-${new Date().toISOString().slice(0,10)}.json`
-
-  if (isMobile.value) {
-    // 手机端：写 Capacitor Filesystem + 分享
-    try {
-      const { Filesystem, Directory } = await import('@capacitor/filesystem')
-      await Filesystem.writeFile({
-        path: fileName,
-        data: json,
-        directory: Directory.Documents,
-      })
-      ElMessage.success(`已导出到 app 文档目录: ${fileName}`)
-    } catch (e) {
-      // fallback: Blob 下载
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
-      URL.revokeObjectURL(url)
-      ElMessage.success('已导出（浏览器下载）')
-    }
-  } else {
-    // 桌面端：Blob 下载
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = fileName; a.click()
-    URL.revokeObjectURL(url)
-    ElMessage.success('完整备份已导出（含全部6组提示词、短语卡片、生词数据、批注、用量）')
-  }
+  await saveFileWithPicker(json, fileName, '完整备份已导出（含全部6组提示词、短语卡片、生词数据、批注、用量）')
 }
 
 async function shareBackup() {
