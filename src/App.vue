@@ -3894,7 +3894,7 @@ const ett = reactive({
   // refs
   essays, records, currentEssayId, userTranslation, practiceStarted, elapsed,
   darkMode, isMobile, fontSize, apiKey, scoringMode, selectedSeg,
-  waveSelectedIdx, waveAnswer, reverseUserTranslation, windowAIInput,
+  waveSelectedIdx, waveAnswer, reverseUserTranslation, reverseWindowAIInput, windowAIInput,
   showAddDialog, showPromptConfig, showVocabPoolDialog, showPhrasePracticeDialog, showWordAnalysis,
   phrasePracticeQueue, showPhraseQueueDialog, openPhraseQueueDialog, packageQueueToEssay,
   // computed
@@ -3930,7 +3930,7 @@ const ett = reactive({
   },
   // functions
   getRecord, scoreColor, formatTime,
-  submitTranslation, submitWindowAI, submitReverseTranslation, copyReversePrompt,
+  submitTranslation, submitWindowAI, submitReverseWindowAI, submitReverseTranslation, copyReversePrompt,
   startPractice, openQwen, openImageImport, openHistoryPanel,
   selectWaveSegment, onWordClick, exportData, triggerImport, normalizeMistakeWaves, shareBackup,
   toggleStarItem, isStarred, vocabStarFilter,

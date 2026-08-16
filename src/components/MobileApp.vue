@@ -209,6 +209,12 @@
             <div class="mob-submit-btn" style="flex:1" @click="$.submitReverseTranslation">API评分</div>
             <div class="mob-submit-btn" style="background:#e6a23c;flex:1" @click="$.copyReversePrompt">复制prompt</div>
           </div>
+          <!-- 反转：粘贴 AI 返回的评分 JSON（窗口AI流程） -->
+          <div class="mob-paste-area">
+            <div class="mob-section-label" style="color:#e6a23c">📋 粘贴 AI 返回的 JSON</div>
+            <textarea class="mob-textarea" v-model="$.reverseWindowAIInput" placeholder='{"accuracy":20,"grammar":18,"vocabulary":19,"fluency":21,"total":78,"feedback":"..."}' style="height:60px;font-size:calc(10px * var(--ett-fs, 1))"></textarea>
+            <div class="mob-submit-btn" style="background:#22C55E;margin-top:4px" @click="$.submitReverseWindowAI">解析并录入评分</div>
+          </div>
           <!-- 反转评分结果 -->
           <template v-if="$.rightPanelRecord && $.rightPanelRecord.type === 'reverse'">
             <div class="mob-section-label">📊 评分结果</div>
@@ -227,6 +233,59 @@
               <div class="mob-fb-title">AI 点评</div>
               <div class="mob-fb-text" v-html="$.renderedFeedback" @click="$.onWordClick($event)"></div>
             </div>
+            <!-- 反转：错误结构分析（水波纠错） -->
+            <template v-if="$.normalizeMistakeWaves($.rightPanelRecord).length">
+              <div class="mob-section-label">🌊 错误结构分析（{{ $.normalizeMistakeWaves($.rightPanelRecord).length }}处）</div>
+              <div v-for="(mw, wi) in $.normalizeMistakeWaves($.rightPanelRecord)" :key="'rmw'+wi" class="mob-wave-box" @click="$.onWordClick($event)">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                  <span v-if="mw.sentenceIndex !== null" style="font-size:calc(9px*var(--ett-fs,1));background:#409eff;color:#fff;padding:1px 6px;border-radius:8px">第{{ mw.sentenceIndex + 1 }}句</span>
+                  <span style="font-size:calc(9px*var(--ett-fs,1));background:#e6a23c;color:#fff;padding:1px 6px;border-radius:8px">{{ mw.errorType || '结构性错误' }}</span>
+                  <span v-if="mw.patternEN" @click.stop="$.toggleStarItem(mw.patternEN)" :title="$.isStarred(mw.patternEN) ? '取消星标' : '星标此结构'" style="cursor:pointer;font-size:calc(12px*var(--ett-fs,1));margin-left:auto">{{ $.isStarred(mw.patternEN) ? '⭐' : '☆' }}</span>
+                </div>
+                <div class="mob-wave-row" v-if="mw.studentError">
+                  <span class="mob-wave-lbl">学生错译</span>
+                  <span style="font-size:calc(9px*var(--ett-fs,1));color:#ef4444;line-height:1.5">{{ mw.studentError }}</span>
+                </div>
+                <div class="mob-wave-row" v-if="mw.patternEN">
+                  <span class="mob-wave-lbl">卡住的英文表达</span>
+                  <span class="mob-wave-en">{{ mw.patternEN }}</span>
+                </div>
+                <div class="mob-wave-row" v-if="mw.whereStuck">
+                  <span class="mob-wave-lbl">为什么容易卡</span>
+                  <span class="mob-wave-zh">{{ mw.whereStuck }}</span>
+                </div>
+                <div v-if="mw.examples?.length">
+                  <div class="mob-wave-lbl" style="padding:2px 0">💡 同类例句</div>
+                  <div v-for="(ex,i) in mw.examples" :key="'ex'+i" class="mob-wave-ex">
+                    <span class="mob-wave-ex-en">{{ ex.en }}</span>
+                    <span class="mob-wave-ex-arrow">→</span>
+                    <span class="mob-wave-ex-zh">{{ ex.zh }}</span>
+                  </div>
+                </div>
+                <div class="mob-wave-row" v-if="mw.nextTime">
+                  <span class="mob-wave-lbl">下次遇到怎么拆</span>
+                  <span class="mob-wave-tip">{{ mw.nextTime }}</span>
+                </div>
+              </div>
+            </template>
+            <!-- 反转：翻译错误对照 -->
+            <template v-if="$.rightPanelRecord?.translationErrors?.length">
+              <div class="mob-section-label">📋 翻译错误对照</div>
+              <div v-for="(te, i) in $.rightPanelRecord.translationErrors" :key="'rte'+i" class="mob-wave-box" style="padding:8px 10px" @click="$.onWordClick($event)">
+                <div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px">
+                  <div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;font-size:calc(9px*var(--ett-fs,1));line-height:1.5">
+                    <span style="color:#ff5f00;font-family:monospace;margin-right:4px">{{ te.originalEN }}</span>
+                    <span style="color:#888">→</span>
+                    <span style="color:#22C55E;margin:0 4px">{{ te.correctEN || '' }}</span>
+                    <span style="color:#888">（你译：</span>
+                    <span style="color:#ef4444;text-decoration:line-through">{{ te.studentEN || '' }}</span>
+                    <span style="color:#888">）</span>
+                  </div>
+                  <span @click.stop="$.toggleStarItem(te.correctEN || te.originalEN)" :title="$.isStarred(te.correctEN || te.originalEN) ? '取消星标' : '星标关键错误'" style="cursor:pointer;font-size:calc(12px*var(--ett-fs,1));flex-shrink:0">{{ $.isStarred(te.correctEN || te.originalEN) ? '⭐' : '☆' }}</span>
+                </div>
+                <div v-if="te.note" style="font-size:calc(8px*var(--ett-fs,1));color:#666;margin-top:2px">{{ te.note }}</div>
+              </div>
+            </template>
             <!-- 反转译文对照 -->
             <div v-if="$.reverseDiffResult.userLines.length" class="mob-section-label">译文对照（反转）</div>
             <div v-if="$.reverseDiffResult.userLines.length" class="mob-cmp" @click="$.onWordClick($event)">
