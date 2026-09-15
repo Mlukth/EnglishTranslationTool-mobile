@@ -431,6 +431,10 @@ rebuild-apk.sh:
 
 7. **微信/支付宝等第三方 SDK 不能直接在 WebView 里用。** Capacitor 的 WebView 运行的是 Web 代码，没有原生 Android Context。需要写 Capacitor Plugin 桥接。这个项目没用到所以不受影响。
 
+8. **手机输入法会改写粘贴进来的文本——解析用户粘贴内容的代码必须容错。** 安卓输入法的「智能标点」会把直引号 `"` 换成弯引号 `“ ”`，还常混入全角标点和零宽字符。症状很有迷惑性：**同一份 JSON 在 PC 端导入正常，在手机 APK 报"解析失败"**。解析函数不能只有严格 `JSON.parse` + 括号深度匹配两条路——标点一改，两条全废。要有分级兜底，其中还原弯引号**只能动结构位置**，值内的中文引号（`“质疑我们动机”`）动了就把好 JSON 弄坏了。完整排查过程和代码见 `D:\docs\lessons-learned\18-mobile-ime-punctuation-json.md`。
+
+9. **导入和导出的原生能力要对齐。** 本项目导出走自定义 `SaveFilePlugin`（SAF 系统对话框，可靠），导入却还是纯 Web 的 `document.createElement('input')` + `.click()`。后者在安卓上有两个坑：① input 必须 `appendChild` 进 DOM 才会弹选择器，否则点击毫无反应；② `accept=".json"` 依赖 SAF 的 MIME 过滤，而 `.json` 的 MIME 映射不可靠，会导致文件在选择器里变灰、选不中。凡涉及文件/存储的，两侧都应走原生实现。
+
 ---
 
 ## 九、多方案测试组件规范（TaskCenterPro 踩坑后总结）

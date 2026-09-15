@@ -1390,7 +1390,90 @@ function extractJSON(text) {
     else if (cleaned[i] === close) { depth--; if (depth === 0) { cleaned = cleaned.slice(first, i + 1); break } }
   }
   try { return JSON.parse(cleaned) } catch {}
+
+  // ===== 兜底：手机端粘贴时输入法改写标点 =====
+  // 安卓输入法的「智能标点」/全角标点会把文本改掉，严格 parse 和括号匹配都救不回来。
+  // 下面每一步只在前面全部失败后才跑，对 PC 端正常 JSON 零影响。
+  // 注意：只做「确定不破坏 JSON 结构」的替换 ——
+  //   零宽字符在 JSON 里永不合法；全角逗号/冒号替换后即使落在字符串值内部
+  //   也只是内容变化，不会破坏结构；尾随逗号本就是非法 JSON。
+  const safeFixes = [
+    s => s.replace(/[​-‍﻿]/g, ''),
+    s => s.replace(/[​-‍﻿]/g, '').replace(/：/g, ':').replace(/，/g, ','),
+    s => s.replace(/,\s*([}\]])/g, '$1'),
+    s => s.replace(/[​-‍﻿]/g, '').replace(/：/g, ':').replace(/，/g, ',').replace(/,\s*([}\]])/g, '$1')
+  ]
+  const bases = [cleaned, ...safeFixes.map(f => f(cleaned))]
+  for (const b of bases) {
+    const candidates = [
+      b,
+      escapeBareNewlines(b),                        // \n 字面量被展开成了真换行
+      restoreStructuralQuotes(b),                   // 智能标点把 " 换成了 “ ”
+      escapeBareNewlines(restoreStructuralQuotes(b)),
+      restoreStructuralQuotes(escapeBareNewlines(b))
+    ]
+    for (const t of candidates) {
+      try { const r = JSON.parse(t); if (r) return r } catch {}
+    }
+  }
   return null
+}
+
+// 还原「结构位置」的弯引号（安卓输入法智能标点把 " 改成了 “ ”）。
+// 只动紧跟 JSON 结构符号的弯引号；字符串值内部的中文引号（如 “质疑我们动机”）
+// 前后是汉字而非结构符号，不会被误伤。
+function restoreStructuralQuotes(s) {
+  return s
+    .replace(/\\([“”])/g, '\\"')                 // 转义引号被弯化：\" 变成 \”
+    .replace(/([{,\[\]:]|^)(\s*)“/g, '$1$2"')     // 字符串起始位：{ , [ ] : 后面的 “
+    .replace(/”(\s*)([:,\}\]])/g, '"$1$2')        // 字符串结束位：” 后面跟 : , } ]
+}
+
+// 把 JSON 字符串值内部的裸换行转义回 \n（结构层的换行保持原样）
+function escapeBareNewlines(s) {
+  let out = ''
+  let inStr = false
+  let esc = false
+  for (const ch of s) {
+    if (esc) { out += ch; esc = false; continue }
+    if (ch === '\\') { out += ch; esc = true; continue }
+    if (ch === '"') { inStr = !inStr; out += ch; continue }
+    if (inStr && (ch === '\n' || ch === '\r')) { out += '\\n'; continue }
+    out += ch
+  }
+  return out
+}
+
+// 诊断：解析失败时列出文本里的「可疑字符」，用于定位手机端被改成了什么。
+// 排除 ASCII、CJK 汉字、常用中文标点 —— 这些是正常内容，报了会淹没重点。
+function diagnoseJsonText(text) {
+  const counts = new Map()
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)
+    if (cp <= 126) continue
+    if (cp >= 0x4E00 && cp <= 0x9FFF) continue   // CJK 汉字
+    if (cp >= 0x3000 && cp <= 0x303F) continue   // 中文标点 。，、《》「」
+    if ('“”‘’—…·①②③④⑤⑥⑦⑧⑨⑩'.includes(ch)) continue
+    counts.set(ch, (counts.get(ch) || 0) + 1)
+  }
+  const list = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([ch, n]) => `U+${ch.codePointAt(0).toString(16).toUpperCase()} ×${n}`)
+  return `长度 ${text.length}｜开头「${text.slice(0, 40)}」｜可疑字符：${list.length ? list.join('，') : '无'}`
+}
+
+// 导入失败统一报错：解析不出来时附带诊断，便于定位手机端粘贴被改成了什么
+function reportImportError(e, sourceText) {
+  const msg = e?.message || String(e)
+  if (msg === '未识别到JSON' && sourceText) {
+    const diag = diagnoseJsonText(sourceText)
+    console.error('[ETT诊断]', diag)
+    console.error('[ETT原始文本]', sourceText)
+    ElMessageBox.alert(diag + '（完整原文已打印到 console）', '解析失败诊断', { confirmButtonText: '知道了' }).catch(() => {})
+    return
+  }
+  ElMessage.error('JSON解析失败：' + msg)
 }
 
 // ========== 数据结构兼容 ==========
@@ -3353,7 +3436,7 @@ function importFromImageJson() {
     imageImportResult.value = ''
     showImageImportDialog.value = false
   } catch (e) {
-    ElMessage.error('JSON解析失败：' + e.message)
+    reportImportError(e, imageImportResult.value)
   }
 }
 
@@ -3391,7 +3474,7 @@ function importBatchFromImageJson() {
     imageImportResult.value = ''
     showImageImportDialog.value = false
   } catch (e) {
-    ElMessage.error('JSON解析失败：' + e.message)
+    reportImportError(e, imageImportResult.value)
   }
 }
 
@@ -3458,7 +3541,7 @@ function importPhraseFromImageJson() {
     imageImportResult.value = ''
     showImageImportDialog.value = false
   } catch (e) {
-    ElMessage.error('JSON解析失败：' + e.message)
+    reportImportError(e, imageImportResult.value)
   }
 }
 
