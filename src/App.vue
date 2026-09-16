@@ -1466,7 +1466,9 @@ function diagnoseJsonText(text) {
 // 导入失败统一报错：解析不出来时附带诊断，便于定位手机端粘贴被改成了什么
 function reportImportError(e, sourceText) {
   const msg = e?.message || String(e)
-  if (msg === '未识别到JSON' && sourceText) {
+  // 只要能拿到原文就弹诊断框：失败原因往往是被输入法改写/括号截断，
+  // 光弹 "Unexpected token" 无从下手，诊断框会列出可疑字符和开头片段。
+  if (sourceText) {
     const diag = diagnoseJsonText(sourceText)
     console.error('[ETT诊断]', diag)
     console.error('[ETT原始文本]', sourceText)
@@ -2611,7 +2613,7 @@ function submitWindowAI() {
     windowAIInput.value = ''
     ElMessage.success(`评分完成：${parsed.total}/100`)
   } catch (e) {
-    ElMessage.error('JSON解析失败：' + e.message)
+    reportImportError(e, windowAIInput.value)
   }
 }
 
@@ -2738,7 +2740,7 @@ function submitReverseWindowAI() {
     reverseWindowAIInput.value = ''
     ElMessage.success(`反转评分完成：${parsed.total}/100`)
   } catch (e) {
-    ElMessage.error('JSON解析失败：' + e.message)
+    reportImportError(e, reverseWindowAIInput.value)
   }
 }
 
@@ -3000,8 +3002,9 @@ function triggerImport() {
 function importData(file) {
   const reader = new FileReader()
   reader.onload = (e) => {
+    const rawText = e.target.result
     try {
-      const data = JSON.parse(e.target.result)
+      const data = JSON.parse(rawText)
       // 识别 WordChase 生词池导入（格式B：word-chase-vocab，增量合并非覆盖）
       if (data.type === 'word-chase-vocab' || (Array.isArray(data.items) && data.items[0]?.item !== undefined)) {
         const items = Array.isArray(data.items) ? data.items : []
@@ -3105,7 +3108,7 @@ function importData(file) {
       } else {
         ElMessage.warning('未识别到可导入的数据。请确认JSON格式：\n- 短语：{"pairs":[{"en":"...","zh":"..."}]}\n- 备份：{"essays":[...],"records":[...],...}')
       }
-    } catch (ex) { ElMessage.error('文件格式错误：' + ex.message) }
+    } catch (ex) { reportImportError(ex, rawText) }
   }
   reader.readAsText(file)
   return false
