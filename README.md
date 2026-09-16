@@ -87,6 +87,13 @@ rebuild-apk.sh                  # 一键重打包脚本
 
 ## 最近更新
 
+### 2026-09-16 — 手动导入 AI 评分统一接入解析诊断
+
+- `App.vue`：`reportImportError` 放宽触发条件 —— 只要拿得到原文就弹诊断框，不再限定错误信息必须等于「未识别到JSON」（这样 `JSON.parse` 的 `Unexpected token` 也能给出诊断）
+- 两个「粘贴窗口AI返回的JSON」入口（正向 `submitWindowAI` / 反转 `submitReverseWindowAI`）改走 `reportImportError`，与「图片导入」链路对齐
+- `importData`（JSON 备份导入）同样接入 —— 它是最后一个用裸 `JSON.parse`、无诊断兜底的入口
+- 背景：粘贴的 JSON 被安卓输入法改写后，原先只弹一句「JSON解析失败」，看不出坏在哪个字符
+
 ### 2025-06-30 — 译文对照对齐修复 + 原文吸顶 + 一键启动脚本
 
 1. **译文对照不再错位**（`App.vue`）
