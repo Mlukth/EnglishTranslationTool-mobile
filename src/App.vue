@@ -14,6 +14,7 @@
           <el-radio-button value="reverse">反转训练</el-radio-button>
         </el-radio-group>
         <el-button size="small" @click="showPromptConfig = true" :icon="Setting">提示词</el-button>
+        <span class="record-cards-chip" :title="'限时内完成卡片 +1；可消耗 1 张续费 1 小时'">🎫 {{ recordCards }}</span>
         <el-button type="primary" size="small" @click="startPractice" :disabled="!currentEssay">开始练习</el-button>
         <el-button size="small" @click="showAddDialog = true">+ 添加范文</el-button>
         <el-button size="small" @click="exportData">导出</el-button>
@@ -54,6 +55,12 @@
                 <el-button class="essay-delete-btn" size="small" text type="danger" @click.stop="deleteEssay(e.id)" title="删除范文">×</el-button>
                 <div class="essay-item-title">{{ e.title }}</div>
                 <div class="essay-item-meta">{{ e.source }} · {{ e.date }}</div>
+                <div class="essay-item-limit" v-if="hasTimeLimit(e.id)">
+                  🔒 {{ formatLimitLabel(cardDeadlines[e.id].limit) }}
+                  <template v-if="cardDeadlines[e.id].accumulated"> · 已练 {{ formatHMS(cardDeadlines[e.id].accumulated) }}</template>
+                  <template v-if="cardDeadlines[e.id].voidCount"> · 作废{{ cardDeadlines[e.id].voidCount }}次</template>
+                </div>
+                <div class="essay-item-limit unset" v-else>未设限时</div>
                 <div class="essay-item-score" v-if="getRecord(e.id)?.completed">
                   <el-tag :type="scoreTag(getRecord(e.id).totalScore)">{{ getRecord(e.id).totalScore }}分</el-tag>
                   <el-button size="small" text type="info" @click.stop="openHistoryPanel(e.id)" class="history-btn">
@@ -235,7 +242,12 @@
           <div class="section" v-if="scoringMode === 'reverse' && practiceStarted && reverseDisplayRef">
             <div class="section-header">
               <span class="section-label">你的英译（中→英）</span>
-              <span class="timer">{{ formatTime(elapsed) }}</span>
+              <span class="timer-group">
+                <span class="limit-countdown" :class="{ urgent: countdownUrgent, unset: countdownSeconds === null }">
+                  {{ countdownSeconds === null ? '🔒 未设限时' : '⏳ 限时剩余 ' + countdownText }}
+                </span>
+                <span class="timer">{{ formatTime(elapsed) }}</span>
+              </span>
               <el-button size="small" type="primary" @click="submitReverseTranslation" :loading="scoring" :disabled="!reverseUserTranslation.trim() || !apiKey">
                 API评分
               </el-button>
@@ -280,7 +292,12 @@
           <div class="section" v-if="scoringMode !== 'wave' && scoringMode !== 'reverse' && practiceStarted">
             <div class="section-header">
               <span class="section-label">你的译文</span>
-              <span class="timer">{{ formatTime(elapsed) }}</span>
+              <span class="timer-group">
+                <span class="limit-countdown" :class="{ urgent: countdownUrgent, unset: countdownSeconds === null }">
+                  {{ countdownSeconds === null ? '🔒 未设限时' : '⏳ 限时剩余 ' + countdownText }}
+                </span>
+                <span class="timer">{{ formatTime(elapsed) }}</span>
+              </span>
               <template v-if="scoringMode === 'api'">
                 <el-button size="small" type="primary" @click="submitTranslation" :loading="scoring" :disabled="!userTranslation.trim()">
                   提交AI评分
@@ -456,6 +473,65 @@
     </template>
 
     <MobileApp v-if="isMobile" />
+
+    <!-- ① 强制设定限时：首次启动该卡片时必须走这一步，否则永远无法开始计时 -->
+    <el-dialog v-model="showTimeLimitDialog" title="⏳ 设定本卡限时（强制）"
+      :width="isMobile ? '92%' : '460px'" align-center
+      :show-close="false" :close-on-click-modal="false" :close-on-press-escape="false">
+      <div class="limit-dlg">
+        <p class="limit-dlg-warn">这张卡片还没有限时。<b>不设定就永远无法开始计时。</b></p>
+        <div class="limit-dlg-display">
+          <span class="limit-dlg-num">{{ Math.floor(timeLimitPick / 60) }}</span><span class="limit-dlg-unit">小时</span>
+          <span class="limit-dlg-num">{{ timeLimitPick % 60 }}</span><span class="limit-dlg-unit">分钟</span>
+        </div>
+        <div class="limit-dlg-steppers">
+          <el-button size="small" @click="adjustTimeLimit(-30)">−30分</el-button>
+          <el-button size="small" @click="adjustTimeLimit(-10)">−10分</el-button>
+          <el-button size="small" @click="adjustTimeLimit(10)">+10分</el-button>
+          <el-button size="small" @click="adjustTimeLimit(30)">+30分</el-button>
+        </div>
+        <div class="limit-dlg-presets">
+          <span v-for="p in [{m:30,l:'30分'},{m:60,l:'1小时'},{m:90,l:'1.5小时'},{m:120,l:'2小时'},{m:180,l:'3小时'},{m:240,l:'4小时'}]"
+            :key="p.m" class="limit-dlg-preset" :class="{ active: timeLimitPick === p.m }" @click="timeLimitPick = p.m">{{ p.l }}</span>
+        </div>
+        <p class="limit-dlg-note">设定后本卡限时<b>永久锁死、不可修改</b>。</p>
+        <p class="limit-dlg-note">倒计时归零仍未完成 → 本卡累计计时<b>销毁</b>且不再计入全局总耗时；可消耗 <b>1 张记录卡续费 1 小时</b>。</p>
+        <p class="limit-dlg-note">当前记录卡：<b>🎫 {{ recordCards }} 张</b></p>
+      </div>
+      <template #footer>
+        <el-button @click="cancelTimeLimitDialog">暂不开始</el-button>
+        <el-button type="primary" @click="confirmTimeLimit">锁定限时并开始计时</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ② 超时强制二选一：无关闭按钮，必须选择续费或作废 -->
+    <el-dialog v-model="showTimeoutDialog" title="⚠ 限时已归零"
+      :width="isMobile ? '92%' : '480px'" align-center
+      :show-close="false" :close-on-click-modal="false" :close-on-press-escape="false">
+      <div class="timeout-dlg">
+        <div class="timeout-dlg-big">00:00</div>
+        <p class="timeout-dlg-warn">
+          本卡限时 <b>{{ formatLimitLabel(timeoutCard ? timeoutCard.limit : 0) }}</b> 已用尽。
+          必须二选一，本弹窗无法关闭。
+        </p>
+        <div class="timeout-dlg-opt">
+          <div class="timeout-dlg-opt-title">① 消耗 1 张记录卡 · 续费 1 小时</div>
+          <div class="timeout-dlg-opt-desc">
+            记录卡：🎫 {{ recordCards }} 张 → {{ Math.max(0, recordCards - 1) }} 张，限时变为 {{ formatLimitLabel((timeoutCard ? timeoutCard.limit : 0) + 3600) }}
+          </div>
+          <el-button type="warning" style="width:100%" :disabled="recordCards <= 0" @click="renewWithRecordCard">
+            {{ recordCards > 0 ? '花 1 张记录卡续 1 小时，继续练' : '记录卡不足，无法续费' }}
+          </el-button>
+        </div>
+        <div class="timeout-dlg-opt danger">
+          <div class="timeout-dlg-opt-title">② 接受作废</div>
+          <div class="timeout-dlg-opt-desc">
+            本卡累计 <b>{{ formatHMS(timeoutCard ? timeoutCard.accumulated : 0) }}</b> 计时将被<b>销毁</b>，且不再计入全局总耗时
+          </div>
+          <el-button type="danger" style="width:100%" @click="acceptVoid">接受作废</el-button>
+        </div>
+      </div>
+    </el-dialog>
 
     <!-- 提示词配置对话框 (P0) -->
     <el-dialog v-model="showPromptConfig" title="提示词配置" width="780px" destroy-on-close>
@@ -1605,6 +1681,58 @@ function resetTokenUsage() {
 const translationDrafts = reactive({})
 const timerStates = reactive({})
 
+// ========== 限时训练：全局记录卡 + 每卡锁定限时 ==========
+// cardDeadlines[essayId] = { limit: 秒, accumulated: 秒, setAt, voidCount, voidedAt }
+// limit        — 首次启动时一次性设定，之后永久锁死
+// accumulated  — 本卡自上次结算（完成/作废）以来的累计练习秒数，计入全局总耗时
+const recordCards = ref(1)              // 全局记录卡余额（初始 1 张）
+const cardDeadlines = reactive({})
+const showTimeLimitDialog = ref(false)  // 首次启动：强制设定限时（不可关闭）
+const showTimeoutDialog = ref(false)    // 倒计时归零：强制二选一（不可关闭）
+const timeLimitPick = ref(120)          // 弹窗中选定的限时（分钟）
+const pendingStartAfterLimit = ref(false) // 设定完限时后是否自动开始计时
+
+function cardDeadlineOf(id) { return id ? cardDeadlines[id] : null }
+// 该卡是否已锁定限时
+function hasTimeLimit(id) { const t = cardDeadlineOf(id); return !!(t && t.limit) }
+// 实时已用秒数（计时中取 elapsed，否则取已结算的累计值）
+const liveUsedSeconds = computed(() => {
+  const t = cardDeadlineOf(currentEssayId.value)
+  if (!t) return 0
+  return practiceStarted.value ? elapsed.value : (t.accumulated || 0)
+})
+// 右上角限时倒计时：剩余秒数（未设定限时返回 null）
+const countdownSeconds = computed(() => {
+  const t = cardDeadlineOf(currentEssayId.value)
+  if (!t || !t.limit) return null
+  return t.limit - liveUsedSeconds.value
+})
+const countdownText = computed(() => {
+  const c = countdownSeconds.value
+  if (c === null) return '未设限时'
+  if (c <= 0) return '00:00'
+  return formatHMS(c)
+})
+const countdownUrgent = computed(() => {
+  const c = countdownSeconds.value
+  return c !== null && c <= 300 // 最后 5 分钟标红
+})
+// 超时弹窗开启瞬间冻结涉事卡片，避免弹窗未决时切卡导致结算对象漂移
+const timeoutCardId = ref(null)
+const timeoutCard = computed(() => cardDeadlineOf(timeoutCardId.value))
+
+function formatHMS(sec) {
+  const s = Math.max(0, Math.floor(sec))
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60
+  const mm = String(m).padStart(2, '0'), sss = String(ss).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${sss}` : `${mm}:${sss}`
+}
+function formatLimitLabel(sec) {
+  const h = sec / 3600
+  if (h >= 1) return Number.isInteger(h) ? `${h}小时` : `${h.toFixed(1)}小时`
+  return `${Math.round(sec / 60)}分钟`
+}
+
 // 范文排序
 const essayOrder = ref([])
 let _dataSyncTimer = null
@@ -1621,6 +1749,7 @@ function touchEssay(id) {
 function deleteEssay(id) {
   essays.value = essays.value.filter(e => e.id !== id)
   records.value = records.value.filter(r => r.essayId !== id)
+  delete cardDeadlines[id]
   if (currentEssayId.value === id) currentEssayId.value = essays.value[0]?.id || null
   ElMessage.success('已删除')
 }
@@ -1767,7 +1896,10 @@ const avgScore = computed(() => {
   return Math.round(done.reduce((s, r) => s + r.totalScore, 0) / done.length)
 })
 const totalTime = computed(() => {
-  const sec = records.value.reduce((s, r) => s + (r.timeSpent || 0), 0)
+  // 已结算记录 + 各卡片尚未结算的累计计时（作废时累计值归零，自动从总耗时中销毁）
+  const recSec = records.value.reduce((s, r) => s + (r.timeSpent || 0), 0)
+  const aliveSec = Object.values(cardDeadlines).reduce((s, t) => s + (t?.accumulated || 0), 0)
+  const sec = recSec + aliveSec
   const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60)
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 })
@@ -2207,7 +2339,9 @@ function syncData() {
         starredItems: Object.assign({}, starredItems),
         translationDrafts: Object.assign({}, translationDrafts),
         timerStates: Object.assign({}, timerStates),
-        exportVersion: 6,
+        recordCards: recordCards.value,
+        cardDeadlines: JSON.parse(JSON.stringify(cardDeadlines)),
+        exportVersion: 7,
         savedAt: Date.now()
       }
       localStorage.setItem('ett_backup', JSON.stringify(backup))
@@ -2254,7 +2388,9 @@ async function flushSave() {
     starredItems: Object.assign({}, starredItems),
     translationDrafts: Object.assign({}, translationDrafts),
     timerStates: Object.assign({}, timerStates),
-    exportVersion: 6,
+    recordCards: recordCards.value,
+    cardDeadlines: JSON.parse(JSON.stringify(cardDeadlines)),
+    exportVersion: 7,
     savedAt: Date.now()
   }
   try { localStorage.setItem('ett_backup', JSON.stringify(backup)) } catch {}
@@ -2315,6 +2451,8 @@ function restoreBackupData(data) {
   if (data.starredItems) Object.assign(starredItems, data.starredItems)
   if (data.translationDrafts) Object.assign(translationDrafts, data.translationDrafts)
   if (data.timerStates) Object.assign(timerStates, data.timerStates)
+  if (typeof data.recordCards === 'number') recordCards.value = data.recordCards
+  if (data.cardDeadlines) Object.assign(cardDeadlines, data.cardDeadlines)
 }
 
 // ========== AI评分 ==========
@@ -2653,8 +2791,22 @@ function saveScoreResult(parsed) {
   stopTimer()
   practiceStarted.value = false
   delete timerStates[essay.id]
+  settleCompletion(essay.id)
   touchEssay(essay.id)
   nextTick(() => { renderTrendChart(); renderRadarChart() })
+}
+
+// ===== 结算：限时内完成 → 记录卡 +1；本卡累计计时兑现进记录后归零 =====
+function settleCompletion(essayId) {
+  const t = cardDeadlineOf(essayId)
+  if (!t || !t.limit) return
+  if (t.accumulated > 0 && t.accumulated < t.limit) {
+    recordCards.value++
+    ElMessage.success(`限时内完成！记录卡 +1（当前 ${recordCards.value} 张）`)
+  }
+  t.accumulated = 0
+  t.lastClearedAt = Date.now()
+  syncData()
 }
 
 // ========== 历史面板 ==========
@@ -2773,6 +2925,7 @@ function saveReverseScoreResult(parsed) {
   }
   stopTimer()
   practiceStarted.value = false
+  settleCompletion(currentEssay.value.id)
   touchEssay(currentEssay.value.id)
   nextTick(() => { renderTrendChart(); renderRadarChart() })
 }
@@ -2798,8 +2951,15 @@ async function submitReverseTranslation() {
 }
 
 // ========== 练习流程 ==========
+// 强制闸门：未设定限时的卡片永远无法开始计时
 function startPractice() {
   if (!currentEssay.value) return
+  if (!hasTimeLimit(currentEssay.value.id)) {
+    pendingStartAfterLimit.value = true
+    timeLimitPick.value = 120
+    showTimeLimitDialog.value = true
+    return
+  }
   stopTimer()
   practiceStarted.value = true
   userTranslation.value = ''
@@ -2807,8 +2967,97 @@ function startPractice() {
     reverseUserTranslation.value = ''
     reverseScoredRecord.value = null
   }
-  elapsed.value = 0
-  timerInterval = setInterval(() => { elapsed.value++ }, 1000)
+  // 续接本卡此前累计的练习时间（完成/作废时才归零）
+  elapsed.value = cardDeadlineOf(currentEssay.value.id)?.accumulated || 0
+  runTimer()
+}
+
+// 计时循环：秒表 + 每卡累计写回 + 倒计时归零拦截
+function runTimer() {
+  stopTimer()
+  timerInterval = setInterval(() => {
+    elapsed.value++
+    const id = currentEssayId.value
+    const t = cardDeadlineOf(id)
+    if (t) t.accumulated = elapsed.value
+    if (t && t.limit && elapsed.value >= t.limit) {
+      // 限时归零 → 停表 + 强制二选一（花记录卡续 1h / 接受作废）
+      stopTimer()
+      practiceStarted.value = false
+      timeoutCardId.value = id
+      showTimeoutDialog.value = true
+      syncData()
+      return
+    }
+    if (elapsed.value % 5 === 0) syncData()
+  }, 1000)
+}
+
+// 续费后继续计时（不清空已输入内容，不清零累计）
+function resumeTiming() {
+  if (!currentEssay.value) return
+  practiceStarted.value = true
+  runTimer()
+}
+
+// ===== 限时弹窗：首次启动强制设定，设定后永久锁死 =====
+function adjustTimeLimit(deltaMin) {
+  timeLimitPick.value = Math.min(24 * 60, Math.max(5, Math.round(timeLimitPick.value + deltaMin)))
+}
+function confirmTimeLimit() {
+  const id = currentEssayId.value
+  if (!id) return
+  const minutes = Math.min(24 * 60, Math.max(5, Math.round(timeLimitPick.value || 0)))
+  if (!cardDeadlines[id]) cardDeadlines[id] = { limit: 0, accumulated: 0, voidCount: 0 }
+  cardDeadlines[id].limit = minutes * 60
+  cardDeadlines[id].setAt = Date.now()
+  showTimeLimitDialog.value = false
+  syncData()
+  ElMessage.success(`本卡限时已锁定：${formatLimitLabel(minutes * 60)}（此后不可修改）`)
+  if (pendingStartAfterLimit.value) {
+    pendingStartAfterLimit.value = false
+    startPractice()
+  }
+}
+function cancelTimeLimitDialog() {
+  // 弹窗不可关闭：仅回到未启动状态
+  pendingStartAfterLimit.value = false
+  showTimeLimitDialog.value = false
+}
+
+// ===== 超时弹窗：强制二选一 =====
+function renewWithRecordCard() {
+  const id = timeoutCardId.value
+  const t = cardDeadlineOf(id)
+  if (!t) return
+  if (recordCards.value <= 0) {
+    ElMessage.error('记录卡不足，只能接受作废')
+    return
+  }
+  recordCards.value--
+  t.limit += 3600 // 续费 1 小时规定时间
+  showTimeoutDialog.value = false
+  ElMessage.success(`消耗 1 张记录卡，限时延长 1 小时 → ${formatLimitLabel(t.limit)}`)
+  // 仅当用户仍停在这张卡上时才续跑
+  if (currentEssayId.value === id) resumeTiming()
+  timeoutCardId.value = null
+  syncData()
+}
+function acceptVoid() {
+  const id = timeoutCardId.value
+  const t = cardDeadlineOf(id)
+  if (t) {
+    t.accumulated = 0          // 本卡累计计时清零（自动从全局总耗时中销毁）
+    t.voidedAt = Date.now()
+    t.voidCount = (t.voidCount || 0) + 1
+  }
+  if (currentEssayId.value === id) elapsed.value = 0
+  showTimeoutDialog.value = false
+  practiceStarted.value = false
+  stopTimer()
+  ElMessage.error('已接受作废：本卡累计计时销毁，且不再计入全局总耗时')
+  timeoutCardId.value = null
+  syncData()
 }
 
 function stopTimer() {
@@ -2897,7 +3146,10 @@ function buildBackupJSON() {
     phraseCards: phraseCards.value,
     phrasePracticeQueue: phrasePracticeQueue.value,
     starredItems: Object.assign({}, starredItems),
-    exportVersion: 6,
+    timerStates: Object.assign({}, timerStates),
+    recordCards: recordCards.value,
+    cardDeadlines: JSON.parse(JSON.stringify(cardDeadlines)),
+    exportVersion: 7,
     savedAt: Date.now()
   }
 }
@@ -2981,7 +3233,9 @@ function autoExportOnLoad() {
         manualVocab: manualVocab.value,
         phraseCards: phraseCards.value,
         phrasePracticeQueue: phrasePracticeQueue.value,
-        exportVersion: 6,
+        recordCards: recordCards.value,
+        cardDeadlines: JSON.parse(JSON.stringify(cardDeadlines)),
+        exportVersion: 7,
         savedAt: Date.now()
       }
     } catch {}
@@ -3086,6 +3340,8 @@ function importData(file) {
       if (data.phraseCards) { phraseCards.value = data.phraseCards; importedSomething = true }
       if (data.phrasePracticeQueue) { phrasePracticeQueue.value = data.phrasePracticeQueue; importedSomething = true }
       if (data.starredItems) { Object.assign(starredItems, data.starredItems); importedSomething = true }
+      if (typeof data.recordCards === 'number') { recordCards.value = data.recordCards; importedSomething = true }
+      if (data.cardDeadlines) { Object.assign(cardDeadlines, data.cardDeadlines); importedSomething = true }
       if (data.promptConfig) {
         if (data.promptConfig.scoringPrompt) promptConfig.value.scoringPrompt = data.promptConfig.scoringPrompt
         if (data.promptConfig.segmentPrompt) promptConfig.value.segmentPrompt = data.promptConfig.segmentPrompt
@@ -3925,41 +4181,50 @@ watch(currentEssayId, (newId, oldId) => {
   // Save current essay's translation draft and timer state
   if (oldId) {
     translationDrafts[oldId] = userTranslation.value
+    const ot = cardDeadlineOf(oldId)
+    if (ot && practiceStarted.value) ot.accumulated = elapsed.value
     if (practiceStarted.value) {
       timerStates[oldId] = { elapsed: elapsed.value, running: timerInterval !== null }
     }
   }
+  const wasRunning = practiceStarted.value
   stopTimer()
+  practiceStarted.value = false
   // Restore new essay's draft
   userTranslation.value = translationDrafts[newId] || ''
-  const saved = timerStates[newId]
-  if (saved) {
-    elapsed.value = saved.elapsed
+  // 续接新卡片自己的累计计时
+  elapsed.value = cardDeadlineOf(newId)?.accumulated || 0
+  // 仅已锁定限时的卡片允许自动续跑（未设限时的卡片一律拦在弹窗上）
+  if (wasRunning && hasTimeLimit(newId)) {
     practiceStarted.value = true
-    if (saved.running) {
-      timerInterval = setInterval(() => { elapsed.value++ }, 1000)
-    }
-  } else {
-    elapsed.value = 0
-    practiceStarted.value = false
+    runTimer()
   }
 })
 watch(userTranslation, (val) => {
   // Persist draft on every change
   if (currentEssay.value) translationDrafts[currentEssay.value.id] = val
-  if (val.trim() && !practiceStarted.value && currentEssay.value) {
+  if (val.trim() && !practiceStarted.value && currentEssay.value && !showTimeLimitDialog.value && !showTimeoutDialog.value) {
+    // 强制闸门：未设定限时的卡片不能靠打字绕过，先弹设定弹窗
+    if (!hasTimeLimit(currentEssay.value.id)) {
+      pendingStartAfterLimit.value = true
+      timeLimitPick.value = 120
+      showTimeLimitDialog.value = true
+      return
+    }
     practiceStarted.value = true
-    elapsed.value = 0
-    stopTimer()
-    timerInterval = setInterval(() => { elapsed.value++ }, 1000)
+    runTimer()
   }
 })
 watch(reverseUserTranslation, (val) => {
-  if (val.trim() && !practiceStarted.value && currentEssay.value && scoringMode.value === 'reverse') {
+  if (val.trim() && !practiceStarted.value && currentEssay.value && scoringMode.value === 'reverse' && !showTimeLimitDialog.value && !showTimeoutDialog.value) {
+    if (!hasTimeLimit(currentEssay.value.id)) {
+      pendingStartAfterLimit.value = true
+      timeLimitPick.value = 120
+      showTimeLimitDialog.value = true
+      return
+    }
     practiceStarted.value = true
-    elapsed.value = 0
-    stopTimer()
-    timerInterval = setInterval(() => { elapsed.value++ }, 1000)
+    runTimer()
   }
 })
 watch(apiKey, (v) => localStorage.setItem('ett_apikey', v))
@@ -3983,7 +4248,15 @@ const ett = reactive({
   waveSelectedIdx, waveAnswer, reverseUserTranslation, reverseWindowAIInput, windowAIInput,
   showAddDialog, showPromptConfig, showVocabPoolDialog, showPhrasePracticeDialog, showWordAnalysis,
   phrasePracticeQueue, showPhraseQueueDialog, openPhraseQueueDialog, packageQueueToEssay,
+  // 限时训练
+  recordCards, cardDeadlines, showTimeLimitDialog, showTimeoutDialog, timeLimitPick,
   // computed
+  get countdownText() { return countdownText.value },
+  get countdownSeconds() { return countdownSeconds.value },
+  get countdownUrgent() { return countdownUrgent.value },
+  get currentLimit() { return cardDeadlineOf(currentEssayId.value)?.limit || 0 },
+  get currentAccumulated() { return cardDeadlineOf(currentEssayId.value)?.accumulated || 0 },
+  get currentVoidCount() { return cardDeadlineOf(currentEssayId.value)?.voidCount || 0 },
   get currentEssay() { return essays.value.find(e => e.id === currentEssayId.value) },
   get rightPanelRecord() {
     const eid = currentEssayId.value
@@ -4015,7 +4288,9 @@ const ett = reactive({
     )
   },
   // functions
-  getRecord, scoreColor, formatTime,
+  getRecord, scoreColor, formatTime, formatHMS, formatLimitLabel,
+  hasTimeLimit, confirmTimeLimit, cancelTimeLimitDialog, adjustTimeLimit,
+  renewWithRecordCard, acceptVoid, resumeTiming,
   submitTranslation, submitWindowAI, submitReverseWindowAI, submitReverseTranslation, copyReversePrompt,
   startPractice, openQwen, openImageImport, openHistoryPanel,
   selectWaveSegment, onWordClick, exportData, triggerImport, normalizeMistakeWaves, shareBackup,
@@ -4035,13 +4310,12 @@ onMounted(async () => {
   // 恢复当前范文的译文草稿（解决切后台被杀后重载丢失问题）
   if (currentEssayId.value && translationDrafts[currentEssayId.value]) {
     userTranslation.value = translationDrafts[currentEssayId.value]
+    // 恢复本卡累计计时（不清零 —— 累计值只在完成/作废时归零）
+    elapsed.value = cardDeadlineOf(currentEssayId.value)?.accumulated || 0
     const saved = timerStates[currentEssayId.value]
-    if (saved) {
-      elapsed.value = saved.elapsed
+    if (saved && saved.running && hasTimeLimit(currentEssayId.value)) {
       practiceStarted.value = true
-      if (saved.running) {
-        timerInterval = setInterval(() => { elapsed.value++ }, 1000)
-      }
+      runTimer()
     }
   }
   // 监听原生 App 前后台切换（钩入 Android onPause/onStop，比 visibilitychange 可靠）
@@ -4083,6 +4357,8 @@ onMounted(async () => {
 .essay-item:hover .essay-delete-btn { opacity:1; }
 .essay-item-title { font-weight:600; font-size:13px; padding-right:22px; color:#f1f5f9; }
 .essay-item-meta { font-size:11px; color:#777; margin-top:2px; }
+.essay-item-limit { font-size:10px; color:#9ca3af; margin-top:2px; font-family:ui-monospace,monospace; }
+.essay-item-limit.unset { color:#f59e0b; }
 .essay-item-score { margin-top:4px; }
 .cal-cell { position:relative; cursor:pointer; padding:4px; text-align:center; }
 .cal-cell.checked { font-weight:700; }
@@ -4099,6 +4375,13 @@ onMounted(async () => {
 .section-label { font-weight:700; font-size:14px; color:#f8fafc; }
 .section-source { font-size:12px; color:#777; }
 .timer { font-family:monospace; font-size:14px; color:#ff5f00; margin-left:auto; }
+/* 限时训练：桌面端倒计时 + 记录卡 */
+.timer-group { margin-left:auto; display:flex; align-items:center; gap:10px; }
+.timer-group .timer { margin-left:0; }
+.limit-countdown { font-family:ui-monospace,monospace; font-size:12px; font-weight:700; padding:2px 8px; border-radius:9px; color:#22C55E; background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.35); white-space:nowrap; }
+.limit-countdown.urgent { color:#ef4444; background:rgba(239,68,68,.14); border-color:rgba(239,68,68,.45); animation:timeout-blink 1s ease-in-out infinite; }
+.limit-countdown.unset { color:#f59e0b; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.4); }
+.record-cards-chip { font-family:ui-monospace,monospace; font-size:12px; font-weight:700; color:#fbbf24; background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.32); border-radius:9px; padding:3px 9px; white-space:nowrap; }
 .original-text { max-height:260px; overflow-y:auto; }
 .orig-seg { display:flex; align-items:flex-start; gap:6px; padding:6px 4px; cursor:pointer; border-radius:4px; transition:background .15s; }
 .orig-seg:hover { background:#141414; }
@@ -4732,6 +5015,42 @@ mark { background:#3a1000; color:#ff5f00; padding:0 2px; border-radius:2px; }
 .wave-seg-text { cursor:pointer; }
 .wave-seg-text:hover { color:#ff5f00; }
 
+/* ===== 限时训练：强制设定限时弹窗 ===== */
+.limit-dlg { padding: 4px 2px; }
+.limit-dlg-warn { font-size:14px; margin:0 0 12px; color:#e5e7eb; line-height:1.6; }
+.limit-dlg-warn b { color:#f59e0b; }
+.limit-dlg-display { text-align:center; font-family:ui-monospace,monospace; padding:14px 0; background:rgba(255,95,0,.08); border:1px solid rgba(255,95,0,.3); border-radius:10px; margin-bottom:12px; }
+.limit-dlg-num { font-size:34px; font-weight:800; color:#ff5f00; }
+.limit-dlg-unit { font-size:13px; color:#9ca3af; margin:0 10px 0 3px; }
+.limit-dlg-steppers { display:flex; gap:6px; justify-content:center; margin-bottom:12px; }
+.limit-dlg-steppers .el-button { flex:1; margin:0 !important; }
+.limit-dlg-presets { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+.limit-dlg-preset { flex:1 0 auto; text-align:center; padding:7px 10px; border-radius:8px; font-size:12px; cursor:pointer; background:#2d2d3f; color:#9ca3af; border:1px solid transparent; transition:all .15s; }
+.limit-dlg-preset.active { background:rgba(255,95,0,.16); color:#ff5f00; border-color:#ff5f00; font-weight:700; }
+.limit-dlg-note { font-size:12px; color:#9ca3af; margin:0 0 6px; line-height:1.6; }
+.limit-dlg-note b { color:#f87171; }
+
+/* ===== 限时训练：超时强制二选一弹窗 ===== */
+.timeout-dlg { padding: 4px 2px; }
+.timeout-dlg-big { text-align:center; font-family:ui-monospace,monospace; font-size:44px; font-weight:800; color:#ef4444; letter-spacing:.06em; margin-bottom:8px; animation:timeout-blink 1s ease-in-out infinite; }
+@keyframes timeout-blink { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+.timeout-dlg-warn { font-size:13px; color:#e5e7eb; text-align:center; line-height:1.65; margin:0 0 14px; }
+.timeout-dlg-warn b { color:#f59e0b; }
+.timeout-dlg-opt { border:1px solid #2d2d3f; border-radius:10px; padding:12px; margin-bottom:10px; background:rgba(255,255,255,.02); }
+.timeout-dlg-opt.danger { border-color:rgba(239,68,68,.35); background:rgba(239,68,68,.05); }
+.timeout-dlg-opt-title { font-size:13px; font-weight:700; color:#f8fafc; margin-bottom:6px; }
+.timeout-dlg-opt.danger .timeout-dlg-opt-title { color:#f87171; }
+.timeout-dlg-opt-desc { font-size:11.5px; color:#9ca3af; line-height:1.6; margin-bottom:10px; }
+.timeout-dlg-opt-desc b { color:#f87171; }
+
+/* 手机端全屏弹窗（受全局 @media 规则影响）内边距与预设排布 */
+@media (max-width: 768px) {
+  .limit-dlg, .timeout-dlg { padding: 18px 4px 0; }
+  .limit-dlg-num { font-size:40px; }
+  .limit-dlg-preset { flex: 1 0 28%; padding:9px 6px; }
+  .timeout-dlg-big { font-size:52px; }
+}
+
 </style>
 
 <!-- 全局暗色弹窗 + 抽屉（非scoped，teleport到body后脱离组件树） -->
@@ -4746,6 +5065,17 @@ html.ett-dark .el-drawer { background: #0d0d0d; }
 html.ett-dark .el-drawer__title { color: #f8fafc; }
 html.ett-dark .el-drawer__header { border-bottom: 1px solid #1e1e1e; }
 html.ett-dark .el-drawer__body { color: #c1c1c1; }
+
+/* 限时训练弹窗：浅色模式下的对比度兜底 */
+html:not(.ett-dark) .limit-dlg-warn,
+html:not(.ett-dark) .timeout-dlg-warn { color: #1f2937; }
+html:not(.ett-dark) .limit-dlg-note,
+html:not(.ett-dark) .timeout-dlg-opt-desc,
+html:not(.ett-dark) .limit-dlg-unit { color: #6b7280; }
+html:not(.ett-dark) .limit-dlg-preset { background: #f3f4f6; color: #6b7280; }
+html:not(.ett-dark) .limit-dlg-preset.active { background: rgba(255,95,0,.1); color: #ff5f00; }
+html:not(.ett-dark) .timeout-dlg-opt { border-color: #e5e7eb; background: #fafafa; }
+html:not(.ett-dark) .timeout-dlg-opt-title { color: #1f2937; }
 
 /* ===== 手机端弹窗适配（全局，因Element Plus teleport弹窗到body） ===== */
 @media (max-width: 768px) {

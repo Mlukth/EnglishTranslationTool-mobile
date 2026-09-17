@@ -11,6 +11,7 @@
         <div class="mob-stat"><b>{{ $.records.filter(r=>r.completed).length }}</b>篇已练</div>
         <div class="mob-stat"><b>{{ $.avgScore }}</b>均分</div>
         <div class="mob-stat"><b>{{ $.totalTime }}</b>总时</div>
+        <div class="mob-stat mob-stat-card"><b>🎫 {{ $.recordCards }}</b>记录卡</div>
       </div>
       <div class="mob-essay-list">
         <div v-for="e in $.essays" :key="e.id" class="mob-essay-item"
@@ -19,6 +20,12 @@
           <div class="mob-essay-info">
             <span class="mob-essay-title">{{ e.title }}</span>
             <span class="mob-essay-src">{{ e.source }}</span>
+            <span class="mob-essay-limit" v-if="$.hasTimeLimit(e.id)">
+              🔒 {{ $.formatLimitLabel($.cardDeadlines[e.id].limit) }}
+              <template v-if="$.cardDeadlines[e.id].accumulated"> · 已练 {{ $.formatHMS($.cardDeadlines[e.id].accumulated) }}</template>
+              <template v-if="$.cardDeadlines[e.id].voidCount"> · 作废{{ $.cardDeadlines[e.id].voidCount }}次</template>
+            </span>
+            <span class="mob-essay-limit unset" v-else>未设限时 · 点开强制设定</span>
           </div>
           <span class="mob-essay-score" v-if="$.getRecord(e.id)?.completed"
             :style="{color: $.getRecord(e.id).totalScore>=80?'#22C55E':'#F59E0B'}">{{ $.getRecord(e.id).totalScore }}分</span>
@@ -43,11 +50,26 @@
         <div class="mob-header">
           <span style="font-size:calc(11px * var(--ett-fs, 1));color:#888" @click="activeTab='essays'">← 范文库</span>
           <span class="mob-title">{{ $.currentEssay ? $.currentEssay.title : '翻译练习' }}</span>
-          <span style="font-size:calc(10px * var(--ett-fs, 1));color:#409eff" @click="$.showPromptConfig=true">⚙ 提示词</span>
+          <!-- 右上角限时倒计时 -->
+          <span class="mob-countdown"
+            :class="{ urgent: $.countdownUrgent, unset: $.countdownSeconds === null }"
+            @click="$.countdownSeconds === null && $.currentEssay ? $.startPractice() : null">
+            <template v-if="$.countdownSeconds === null">⏳ 未设限时</template>
+            <template v-else>⏳ {{ $.countdownText }}</template>
+          </span>
         </div>
         <div class="mob-mode-pills">
           <span v-for="m in [{k:'api',l:'API评分'},{k:'window',l:'窗口AI'},{k:'wave',l:'水波'},{k:'reverse',l:'反转'}]" :key="m.k"
             class="mob-pill" :class="{ active: $.scoringMode === m.k }" @click="$.scoringMode = m.k">{{ m.l }}</span>
+          <span style="font-size:calc(10px * var(--ett-fs, 1));color:#409eff;margin-left:auto;flex-shrink:0" @click="$.showPromptConfig=true">⚙</span>
+        </div>
+        <!-- 限时状态条：全局记录卡 + 本卡锁定限时 + 已用 -->
+        <div class="mob-limit-bar" v-if="$.currentEssay">
+          <span class="mob-limit-chip card">🎫 记录卡 <b>{{ $.recordCards }}</b></span>
+          <span class="mob-limit-chip" v-if="$.currentLimit">限时 {{ $.formatLimitLabel($.currentLimit) }}</span>
+          <span class="mob-limit-chip unset" v-else>未设限时</span>
+          <span class="mob-limit-chip used" v-if="$.currentAccumulated">已练 {{ $.formatHMS($.currentAccumulated) }}</span>
+          <span class="mob-limit-chip void" v-if="$.currentVoidCount">已作废 {{ $.currentVoidCount }} 次</span>
         </div>
         <!-- 原文展开条（收起时不占位） -->
         <template v-if="$.scoringMode !== 'wave' && $.currentEssay && mobSrcShow">
@@ -306,8 +328,11 @@
       </div>
       <el-empty v-if="!$.currentEssay" description="请先在范文库选择一篇范文" :image-size="80" style="margin-top:40px" />
       <div class="mob-bottom-actions">
-        <div class="mob-action-btn" style="background:#374151" @click="$.practiceStarted ? null : $.startPractice()">
-          {{ $.practiceStarted ? '⏱ ' + $.formatTime($.elapsed) : '开始练习' }}
+        <div class="mob-action-btn" :style="{ background: $.practiceStarted ? '#374151' : ($.countdownSeconds === null ? '#b45309' : '#2563eb') }"
+          @click="$.practiceStarted ? null : $.startPractice()">
+          <template v-if="$.practiceStarted">⏱ 已练 {{ $.formatHMS($.elapsed) }}<template v-if="$.countdownSeconds !== null"> · 剩余 {{ $.countdownText }}</template></template>
+          <template v-else-if="$.countdownSeconds === null">🔒 先设定限时才能开始</template>
+          <template v-else>▶ 继续练习（剩余 {{ $.countdownText }}）</template>
         </div>
       </div>
     </div>
@@ -326,6 +351,14 @@
         <div class="mob-stat-big"><span class="mob-stat-num">{{ $.avgScore }}</span><span class="mob-stat-lbl">平均分</span></div>
         <div class="mob-stat-div"></div>
         <div class="mob-stat-big"><span class="mob-stat-num">{{ $.totalTime }}</span><span class="mob-stat-lbl">总耗时</span></div>
+      </div>
+      <!-- 全局记录卡：限时内完成 +1，可消耗 1 张续费 1h -->
+      <div class="mob-card-vault">
+        <span class="mob-vault-icon">🎫</span>
+        <div class="mob-vault-info">
+          <span class="mob-vault-num">{{ $.recordCards }}</span>
+          <span class="mob-vault-lbl">张记录卡 · 限时内完成 +1，超时作废不计时</span>
+        </div>
       </div>
       <div class="mob-mine-grid">
         <div class="mob-mine-item" @click="$.showVocabPoolDialog = true">
@@ -998,6 +1031,9 @@ watch(() => $.currentEssayId, () => {
 .mob-essay-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mob-essay-title { font-size: calc(12px * var(--ett-fs, 1)); color: #eee; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mob-essay-src { font-size: calc(9px * var(--ett-fs, 1)); color: #888; }
+.mob-essay-limit { font-size: calc(9px * var(--ett-fs, 1)); color: #9ca3af; font-family: ui-monospace, monospace; }
+.mob-essay-limit.unset { color: #f59e0b; }
+.mob-stat-card b { color: #fbbf24 !important; }
 .mob-essay-score { font-size: calc(18px * var(--ett-fs, 1)); font-weight: 700; margin-left: 8px; }
 .mob-essay-hist { font-size: calc(9px * var(--ett-fs, 1)); color: #888; margin-left: 6px; cursor: pointer; padding: 2px 5px; border-radius: 4px; background: #2d2d3f; }
 .mob-essay-new { font-size: calc(10px * var(--ett-fs, 1)); color: #888; background: #374151; padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
@@ -1010,9 +1046,37 @@ watch(() => $.currentEssayId, () => {
 .mob-action-btn.primary { background: #409eff; }
 .mob-action-btn.success { background: #22C55E; }
 
-.mob-mode-pills { display: flex; gap: 4px; padding: 2px 14px 8px; flex-shrink: 0; }
+.mob-mode-pills { display: flex; gap: 4px; padding: 2px 14px 8px; flex-shrink: 0; align-items: center; }
 .mob-pill { padding: 4px 10px; border-radius: 12px; font-size: calc(9px * var(--ett-fs, 1)); background: #2d2d3f; color: #888; cursor: pointer; }
 .mob-pill.active { background: #e6a23c; color: #fff; }
+
+/* ===== 限时训练：右上角倒计时 + 状态条 ===== */
+.mob-countdown {
+  margin-left: auto; flex-shrink: 0;
+  font-family: ui-monospace, monospace;
+  font-size: calc(12px * var(--ett-fs, 1));
+  font-weight: 700; color: #22c55e;
+  background: rgba(34,197,94,.12);
+  border: 1px solid rgba(34,197,94,.35);
+  border-radius: 10px; padding: 2px 8px;
+  letter-spacing: .02em;
+}
+.mob-countdown.urgent { color: #ef4444; background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.45); animation: mob-cd-pulse 1s ease-in-out infinite; }
+.mob-countdown.unset { color: #f59e0b; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.4); font-weight: 600; }
+@keyframes mob-cd-pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+
+.mob-limit-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 14px 8px; flex-shrink: 0; }
+.mob-limit-chip {
+  font-size: calc(9px * var(--ett-fs, 1));
+  padding: 2px 7px; border-radius: 8px;
+  background: #2d2d3f; color: #9ca3af;
+  font-family: ui-monospace, monospace;
+}
+.mob-limit-chip b { color: #fbbf24; }
+.mob-limit-chip.card { background: rgba(251,191,36,.14); color: #fbbf24; }
+.mob-limit-chip.unset { background: rgba(245,158,11,.14); color: #f59e0b; }
+.mob-limit-chip.used { background: rgba(64,158,255,.12); color: #60a5fa; }
+.mob-limit-chip.void { background: rgba(239,68,68,.14); color: #f87171; }
 
 .mob-practice-scroll { flex: 1; overflow-y: auto; padding: 0 14px; }
 .mob-src-bar { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: #2d2d3f; border-radius: 8px; cursor: pointer; margin-bottom: 4px; }
@@ -1071,6 +1135,11 @@ watch(() => $.currentEssayId, () => {
 .mob-stat-num { display: block; font-size: calc(18px * var(--ett-fs, 1)); font-weight: 700; color: #22C55E; }
 .mob-stat-lbl { font-size: calc(9px * var(--ett-fs, 1)); color: #888; }
 .mob-stat-div { width: 1px; height: 28px; background: #374151; }
+.mob-card-vault { display: flex; align-items: center; gap: 10px; margin: 0 14px 10px; padding: 10px 12px; background: rgba(251,191,36,.09); border: 1px solid rgba(251,191,36,.28); border-radius: 12px; }
+.mob-vault-icon { font-size: calc(20px * var(--ett-fs, 1)); }
+.mob-vault-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.mob-vault-num { font-size: calc(17px * var(--ett-fs, 1)); font-weight: 700; color: #fbbf24; line-height: 1.1; }
+.mob-vault-lbl { font-size: calc(9px * var(--ett-fs, 1)); color: #9ca3af; }
 
 .mob-mine-grid {
   display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
